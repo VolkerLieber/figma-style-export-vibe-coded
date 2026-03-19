@@ -1636,16 +1636,20 @@
 
             // ── Message from plugin ────────────────────────────────────────────────────
             window.onmessage = (event) => {
-                // Only accept messages from the plugin sandbox (our parent frame)
-                if (event.source !== window.parent) return;
                 const msg = event.data.pluginMessage;
+                // Only process messages that carry a pluginMessage payload (Figma plugin protocol).
+                // Note: event.source is null in Figma's sandboxed iframe — do NOT check it.
                 if (!msg) return;
 
                 if (msg.type === "STATUS") {
+                    clearTimeout(exportWatchdog); // plugin is alive — reset watchdog
+                    exportWatchdog = null;
                     setStatus("loading", msg.message);
                 }
 
                 if (msg.type === "RESULT") {
+                    clearTimeout(exportWatchdog);
+                    exportWatchdog = null;
                     payload = msg.payload;
                     updateStats(payload.meta.counts);
                     renderPreview();
@@ -1711,6 +1715,8 @@
                 }
 
                 if (msg.type === "ERROR") {
+                    clearTimeout(exportWatchdog);
+                    exportWatchdog = null;
                     setStatus("error", msg.message);
                     exportBtn.disabled = false;
                     resolveBtn.disabled = false;
@@ -1750,6 +1756,8 @@
             }
 
             // ── Events ─────────────────────────────────────────────────────────────────
+            let exportWatchdog = null;
+
             exportBtn.addEventListener("click", () => {
                 if (payload) {
                     // Already have data — just re-download
@@ -1759,6 +1767,20 @@
                 }
                 exportBtn.disabled = true;
                 setStatus("loading", "Starting export…");
+
+                // Watchdog: if no STATUS or RESULT arrives within 15 s, surface an error
+                // so the user isn't left staring at a frozen spinner.
+                clearTimeout(exportWatchdog);
+                exportWatchdog = setTimeout(() => {
+                    if (!payload) {
+                        exportBtn.disabled = false;
+                        setStatus(
+                            "error",
+                            "Export timed out — no response from plugin. Try re-opening the plugin.",
+                        );
+                    }
+                }, 15000);
+
                 parent.postMessage({ pluginMessage: { type: "EXPORT" } }, "*");
             });
 

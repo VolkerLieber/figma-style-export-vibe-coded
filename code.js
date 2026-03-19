@@ -40,10 +40,32 @@ function shallowMerge(target) {
     return target;
 }
 
+// Wrap a promise with a timeout so a stalled Figma IPC call never hangs export forever.
+function withTimeout(promise, ms) {
+    return new Promise(function (resolve) {
+        var timer = setTimeout(function () {
+            resolve(null);
+        }, ms);
+        promise.then(
+            function (v) {
+                clearTimeout(timer);
+                resolve(v);
+            },
+            function () {
+                clearTimeout(timer);
+                resolve(null);
+            },
+        );
+    });
+}
+
 async function resolveVariableAlias(alias) {
     if (!alias || alias.type !== "VARIABLE_ALIAS") return null;
     try {
-        var variable = await figma.variables.getVariableByIdAsync(alias.id);
+        var variable = await withTimeout(
+            figma.variables.getVariableByIdAsync(alias.id),
+            500,
+        );
         return variable ? { name: variable.name, id: variable.id } : null;
     } catch (e) {
         return null;
@@ -70,6 +92,14 @@ async function extractTextStyles() {
     for (var i = 0; i < styles.length; i++) {
         var style = styles[i];
         var bv = style.boundVariables || {};
+
+        // Post progress every 10 styles so the UI doesn't appear frozen on large files
+        if (i > 0 && i % 10 === 0) {
+            figma.ui.postMessage({
+                type: "STATUS",
+                message: "Text styles " + i + "/" + styles.length + "…",
+            });
+        }
 
         var resolveField = makeResolveField(bv);
 
@@ -268,8 +298,9 @@ async function extractVariables() {
                 return extVarCache[value.id];
             }
             try {
-                var extVar = await figma.variables.getVariableByIdAsync(
-                    value.id,
+                var extVar = await withTimeout(
+                    figma.variables.getVariableByIdAsync(value.id),
+                    500,
                 );
                 var resolved = extVar
                     ? { $alias: extVar.name, $aliasId: extVar.id }
@@ -297,6 +328,11 @@ async function extractVariables() {
     for (var c = 0; c < collections.length; c++) {
         var collection = collections[c];
         var variables = [];
+
+        figma.ui.postMessage({
+            type: "STATUS",
+            message: "Variables: " + collection.name + "…",
+        });
 
         for (var v = 0; v < collection.variableIds.length; v++) {
             var variable = varById[collection.variableIds[v]];
@@ -473,10 +509,12 @@ async function resolveLibraryVariableValues(libraryVariables) {
             // not be found — modeIdToName stays empty and keys fall back to raw modeId strings.
             var importedCollection = null;
             try {
-                importedCollection =
-                    await figma.variables.getVariableCollectionByIdAsync(
+                importedCollection = await withTimeout(
+                    figma.variables.getVariableCollectionByIdAsync(
                         imported.variableCollectionId,
-                    );
+                    ),
+                    500,
+                );
             } catch (e) {
                 /* remote collection — not locally accessible, fall back to modeId keys */
             }
