@@ -28,7 +28,7 @@ function parseName(name) {
     };
 }
 
-function assign(target) {
+function shallowMerge(target) {
     for (var i = 1; i < arguments.length; i++) {
         var src = arguments[i];
         if (!src) continue;
@@ -50,6 +50,17 @@ async function resolveVariableAlias(alias) {
     }
 }
 
+// Factory: captures bv at call-time so the async body never sees a stale reference
+// when the outer for-loop has advanced to the next iteration.
+function makeResolveField(bv) {
+    return async function (field) {
+        var aliases = bv[field];
+        if (!aliases) return null;
+        var alias = Array.isArray(aliases) ? aliases[0] : aliases;
+        return resolveVariableAlias(alias);
+    };
+}
+
 // ─── Text Styles ────────────────────────────────────────────────────────────
 
 async function extractTextStyles() {
@@ -60,17 +71,12 @@ async function extractTextStyles() {
         var style = styles[i];
         var bv = style.boundVariables || {};
 
-        var resolveField = async function (field) {
-            var aliases = bv[field];
-            if (!aliases) return null;
-            var alias = Array.isArray(aliases) ? aliases[0] : aliases;
-            return resolveVariableAlias(alias);
-        };
+        var resolveField = makeResolveField(bv);
 
         var nameMeta = parseName(style.name);
 
         result.push(
-            assign(
+            shallowMerge(
                 {
                     id: style.key,
                     name: style.name,
@@ -137,7 +143,7 @@ async function extractPaintStyles() {
                         ? await resolveVariableAlias(paint.boundVariables.color)
                         : null;
                 paints.push(
-                    assign({}, base, {
+                    shallowMerge({}, base, {
                         hex: hex,
                         boundVariable: boundColorVar,
                     }),
@@ -164,14 +170,14 @@ async function extractPaintStyles() {
                         boundVariable: stopVar,
                     });
                 }
-                paints.push(assign({}, base, { gradientStops: stops }));
+                paints.push(shallowMerge({}, base, { gradientStops: stops }));
             } else {
                 paints.push(base);
             }
         }
 
         result.push(
-            assign(
+            shallowMerge(
                 {
                     id: style.key,
                     name: style.name,
@@ -214,7 +220,7 @@ async function extractEffectStyles() {
         }
 
         result.push(
-            assign(
+            shallowMerge(
                 {
                     id: style.key,
                     name: style.name,
@@ -240,6 +246,11 @@ async function extractVariables() {
         varById[allVars[i].id] = allVars[i];
     }
 
+    // Cache for external variable lookups to avoid redundant getVariableByIdAsync
+    // calls — a file with 50 Token Sizes vars × 3 modes hits the same handful
+    // of external IDs repeatedly without this.
+    var extVarCache = {};
+
     // resolveValue is async: for VARIABLE_ALIAS values pointing to external
     // (library) variables not in varById, we attempt getVariableByIdAsync to
     // retrieve the variable name — critical for Token Sizes aliases like
@@ -252,16 +263,23 @@ async function extractVariables() {
         ) {
             var ref = varById[value.id];
             if (ref) return { $alias: ref.name, $aliasId: ref.id };
-            // External variable — try to resolve by ID
+            // External variable — check cache first, then API
+            if (extVarCache[value.id] !== undefined) {
+                return extVarCache[value.id];
+            }
             try {
                 var extVar = await figma.variables.getVariableByIdAsync(
                     value.id,
                 );
-                if (extVar) return { $alias: extVar.name, $aliasId: extVar.id };
+                var resolved = extVar
+                    ? { $alias: extVar.name, $aliasId: extVar.id }
+                    : { $alias: value.id };
+                extVarCache[value.id] = resolved;
+                return resolved;
             } catch (e) {
-                /* not available */
+                extVarCache[value.id] = { $alias: value.id };
+                return { $alias: value.id };
             }
-            return { $alias: value.id };
         }
         if (resolvedType === "COLOR" && value && typeof value === "object") {
             return rgbaToHex(
@@ -302,7 +320,7 @@ async function extractVariables() {
             }
 
             variables.push(
-                assign(
+                shallowMerge(
                     {
                         id: variable.id,
                         name: variable.name,
@@ -362,7 +380,7 @@ async function extractLibraryVariables() {
         for (var j = 0; j < libVars.length; j++) {
             var v = libVars[j];
             variables.push(
-                assign(
+                shallowMerge(
                     {
                         key: v.key,
                         name: v.name,
@@ -449,10 +467,32 @@ async function resolveLibraryVariableValues(libraryVariables) {
 
             // Read valuesByMode. Note: this will not resolve cross-library aliases
             // automatically — alias IDs are preserved as-is for transparency.
+            // Build a modeId → modeName map from the imported variable's collection.
+            // Note: getVariableCollectionByIdAsync only returns LOCAL collections.
+            // For truly external library variables their collection is remote and will
+            // not be found — modeIdToName stays empty and keys fall back to raw modeId strings.
+            var importedCollection = null;
+            try {
+                importedCollection =
+                    await figma.variables.getVariableCollectionByIdAsync(
+                        imported.variableCollectionId,
+                    );
+            } catch (e) {
+                /* remote collection — not locally accessible, fall back to modeId keys */
+            }
+            var modeIdToName = {};
+            if (importedCollection) {
+                for (var mc = 0; mc < importedCollection.modes.length; mc++) {
+                    modeIdToName[importedCollection.modes[mc].modeId] =
+                        importedCollection.modes[mc].name;
+                }
+            }
+
             var valuesByMode = {};
             var modeIds = Object.keys(imported.valuesByMode);
             for (var m = 0; m < modeIds.length; m++) {
                 var modeId = modeIds[m];
+                var modeName = modeIdToName[modeId] || modeId; // fall back to ID if name unavailable
                 var raw = imported.valuesByMode[modeId];
                 var val;
                 if (
@@ -476,11 +516,11 @@ async function resolveLibraryVariableValues(libraryVariables) {
                 } else {
                     val = raw;
                 }
-                valuesByMode[modeId] = val;
+                valuesByMode[modeName] = val;
             }
 
             resolvedVars.push(
-                assign({}, descriptor, {
+                shallowMerge({}, descriptor, {
                     valuesByMode: valuesByMode,
                     description: imported.description || "",
                     codeSyntax: imported.codeSyntax,
@@ -495,7 +535,7 @@ async function resolveLibraryVariableValues(libraryVariables) {
         }
 
         result.push(
-            assign({}, col, {
+            shallowMerge({}, col, {
                 valuesResolved: true,
                 importStats: { newlyImported: newlyImported },
                 variables: resolvedVars,
@@ -584,9 +624,18 @@ figma.ui.onmessage = async function (msg) {
     // ── Resolve library variable values (opt-in, user confirmed) ────────────────
     if (msg.type === "RESOLVE_LIB_VARS") {
         try {
-            var resolved = await resolveLibraryVariableValues(
-                msg.libraryVariables,
-            );
+            // Validate incoming data before passing to the resolver
+            if (!Array.isArray(msg.libraryVariables)) {
+                figma.ui.postMessage({
+                    type: "ERROR",
+                    message: "Invalid library variable data received.",
+                });
+                return;
+            }
+            var validCollections = msg.libraryVariables.filter(function (col) {
+                return col && Array.isArray(col.variables);
+            });
+            var resolved = await resolveLibraryVariableValues(validCollections);
             figma.ui.postMessage({
                 type: "LIB_VARS_RESOLVED",
                 libraryVariables: resolved,

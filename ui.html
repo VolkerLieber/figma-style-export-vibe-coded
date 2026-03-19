@@ -608,7 +608,7 @@
                 <button class="fmt-btn" data-fmt="text">Text only</button>
                 <button class="fmt-btn" data-fmt="paint">Colors only</button>
                 <button class="fmt-btn" data-fmt="vars">Variables</button>
-                <button class="fmt-btn" data-fmt="neos-css">Neos CSS</button>
+                <button class="fmt-btn" data-fmt="tw4-css">Tailwind v4</button>
             </div>
         </div>
 
@@ -763,16 +763,23 @@
                                     .replace(/\//g, "-")
                                     .replace(/\s+/g, "-");
                             const val = Object.values(v.valuesByMode)[0];
-                            if (val && typeof val !== "object")
-                                lines.push(`  ${cssName}: ${val};`);
-                            else if (typeof val === "string")
+                            if (
+                                val !== null &&
+                                val !== undefined &&
+                                typeof val !== "object"
+                            )
                                 lines.push(`  ${cssName}: ${val};`);
                         }
                     } else {
                         // Multi-mode — emit per-mode attribute selectors
-                        for (const mode of modes) {
+                        for (
+                            let modeIdx = 0;
+                            modeIdx < modes.length;
+                            modeIdx++
+                        ) {
+                            const mode = modes[modeIdx];
                             const selector =
-                                modes.indexOf(mode) === 0
+                                modeIdx === 0
                                     ? ":root"
                                     : `[data-theme="${mode.name.toLowerCase()}"]`;
                             lines.push("");
@@ -915,7 +922,7 @@
                 return lines.join("\n");
             }
 
-            // ── Neos CSS format ────────────────────────────────────────────────────────
+            // ── Tailwind v4 CSS format ─────────────────────────────────────────────────
             // Produces 5 files matching the project's CSS architecture:
             //   primitives.css  → @theme with raw hex values (primitive collections)
             //   semantics.css   → @theme with semantic alias vars
@@ -963,12 +970,10 @@
                 return toCssVarName(relevant.join("/"));
             }
 
-            function resolveAliasVarName(aliasName, aliasId, allVars) {
+            function resolveAliasVarName(aliasName, aliasId, allVarsMap) {
                 // Try by ID first (reliable) — $aliasId is the Figma variable ID
                 if (aliasId) {
-                    var byId = allVars.find(function (v) {
-                        return v.id === aliasId;
-                    });
+                    var byId = allVarsMap.get(aliasId);
                     if (byId) {
                         return byId._isPrimitive
                             ? "--color-primitives-" + toCssVarName(byId.name)
@@ -987,13 +992,15 @@
                 return null;
             }
 
-            function toNeosCss(data) {
-                // Flatten all local variables into a lookup by id, tagging primitives
-                var allVars = [];
+            function toTw4Css(data) {
+                // Flatten all local variables into a Map keyed by id, tagging primitives.
+                // Using a Map gives O(1) lookup in resolveAliasVarName vs O(n) with .find().
+                var allVars = new Map();
                 (data.variables || []).forEach(function (col) {
                     var isPrim = /primitiv/i.test(col.name);
                     col.variables.forEach(function (v) {
-                        allVars.push(
+                        allVars.set(
+                            v.id,
                             Object.assign({}, v, { _isPrimitive: isPrim }),
                         );
                     });
@@ -1002,9 +1009,11 @@
                 (data.libraryVariables || []).forEach(function (col) {
                     var isPrim = /primitiv/i.test(col.name);
                     col.variables.forEach(function (v) {
-                        allVars.push(
-                            Object.assign({}, v, { _isPrimitive: isPrim }),
-                        );
+                        if (v.id)
+                            allVars.set(
+                                v.id,
+                                Object.assign({}, v, { _isPrimitive: isPrim }),
+                            );
                     });
                 });
 
@@ -1017,10 +1026,12 @@
                     var hasColors = col.variables.some(function (v) {
                         return v.resolvedType === "COLOR";
                     });
-                    if (col.modes.length > 1 && hasColors) {
-                        themeCollections.push(col);
-                    } else if (/primitiv/i.test(col.name)) {
+                    // Primitives are identified by name — they always go to primitives.css
+                    // regardless of mode count. Theme check is only for non-primitive collections.
+                    if (/primitiv/i.test(col.name)) {
                         primitiveCollections.push(col);
+                    } else if (col.modes.length > 1 && hasColors) {
+                        themeCollections.push(col);
                     } else {
                         semanticCollections.push(col);
                     }
@@ -1104,7 +1115,7 @@
                 // The runtime overrides live in themes.css.
                 themeCollections.forEach(function (col) {
                     var defaultMode = col.modes.find(function (m) {
-                        return m.name === "Default";
+                        return m.name.toLowerCase() === "default";
                     });
                     if (!defaultMode) return;
                     var colorVars = col.variables.filter(function (v) {
@@ -1113,7 +1124,12 @@
                     if (colorVars.length)
                         semLines.push("  /* " + col.name + " (Default) */");
                     colorVars.forEach(function (v) {
-                        emitSemanticVar(semLines, v, v.valuesByMode["Default"]);
+                        // Use defaultMode.name (not hardcoded 'Default') so case variants like 'default' work
+                        emitSemanticVar(
+                            semLines,
+                            v,
+                            v.valuesByMode[defaultMode.name],
+                        );
                     });
                 });
 
@@ -1126,9 +1142,7 @@
                 themeCollections.forEach(function (col) {
                     col.modes.forEach(function (mode) {
                         var modeName = mode.name;
-                        var themeSlug = modeName
-                            .toLowerCase()
-                            .replace(/\s+/g, "-");
+                        var themeSlug = toCssVarName(modeName);
                         var selector =
                             ':where([data-theme="' + themeSlug + '"]) > *';
                         themeLines.push(selector + " {");
@@ -1188,7 +1202,7 @@
                 //   modes (e.g. Desktop / Tablet / Mobile), we map those mode names to
                 //   Tailwind breakpoint prefixes and generate a responsive @apply chain.
                 //   Mode name → breakpoint prefix mapping (mobile-first, case-insensitive):
-                //     Mobile / SM / Small → (no prefix, base)
+                //     Mobile / SM / Small / XS → (no prefix, base)
                 //     Tablet / MD / Medium → md:
                 //     Desktop / LG / Large / Default → lg:
                 //   If no multi-mode binding exists, fall back to the raw fontSize scalar.
@@ -1267,8 +1281,10 @@
                     "text-9xl",
                 ];
 
-                function resolveFloatToTwClass(raw) {
+                function resolveFloatToTwClass(raw, _depth) {
                     if (!raw) return null;
+                    // Guard against circular alias chains (invalid but possible with stale library data)
+                    if ((_depth || 0) > 5) return null;
 
                     // Alias with a resolved name (after code.js fix)
                     if (raw && raw.$alias && typeof raw.$alias === "string") {
@@ -1293,12 +1309,13 @@
                             if (TW_TEXT_SIZES.indexOf(seg) === -1) return null;
                             return seg;
                         }
-                        // Unresolved ID alias — try local varById
+                        // Unresolved ID alias — try local varById (with depth guard)
                         if (raw.$aliasId && varById[raw.$aliasId]) {
                             return resolveFloatToTwClass(
                                 Object.values(
                                     varById[raw.$aliasId].valuesByMode || {},
                                 )[0],
+                                (_depth || 0) + 1,
                             );
                         }
                         return null;
@@ -1312,10 +1329,16 @@
 
                 (data.textStyles || []).forEach(function (style) {
                     var utilName = "text-" + lastSegment(style.name);
+                    // Early exit: skip utilities that would shadow a Tailwind built-in
+                    if (TW_BUILTIN_TEXT[utilName]) return;
 
                     var boundFontSize =
                         style.boundVariables && style.boundVariables.fontSize;
-                    var boundVarId = boundFontSize && boundFontSize.id;
+                    // boundFontSize.id = local variable ID (from resolveVariableAlias)
+                    // boundFontSize.$aliasId = library variable ID (from resolveValue in code.js)
+                    var boundVarId =
+                        boundFontSize &&
+                        (boundFontSize.id || boundFontSize["$aliasId"]);
                     var boundVar = boundVarId ? varById[boundVarId] : null;
 
                     var applies = [];
@@ -1358,8 +1381,6 @@
                     }
 
                     if (!applies.length) return;
-                    // Skip utilities that would shadow a Tailwind built-in
-                    if (TW_BUILTIN_TEXT[utilName]) return;
 
                     sizeLines.push("@utility " + utilName + " {");
                     sizeLines.push("    @apply " + applies.join(" ") + ";");
@@ -1401,7 +1422,7 @@
                         if (pct === 140) return "leading-140p";
                         if (pct === 150) return "leading-normal";
                         if (pct === 160) return "leading-160p";
-                        if (pct === 175) return "leading-7";
+                        if (pct === 175) return "leading-[175%]";
                         return "leading-[" + pct + "%]";
                     }
                     return "leading-[" + lh.value + "px]";
@@ -1420,6 +1441,13 @@
                     var utilName = seg + "-text";
                     // Reference the size utility from sizes.css by the same last-segment name
                     var sizeUtil = "text-" + seg;
+
+                    // Skip if the corresponding size utility was not generated (no fontSize data)
+                    // and the sizeUtil would also not exist as a Tailwind built-in —
+                    // an @apply of a non-existent utility causes a build error.
+                    var sizeUtilExists =
+                        TW_BUILTIN_TEXT[sizeUtil] || style.fontSize;
+                    if (!sizeUtilExists) return;
 
                     var applies = [];
                     var fam = familyToTw(style.fontFamily);
@@ -1445,7 +1473,7 @@
             }
 
             // ── Multi-file ZIP download ─────────────────────────────────────────────────
-            function downloadNeosCssZip(files) {
+            function downloadTw4CssZip(files) {
                 // Use JSZip (loaded from CDN)
                 if (typeof JSZip === "undefined") {
                     setStatus(
@@ -1458,14 +1486,24 @@
                 Object.keys(files).forEach(function (name) {
                     zip.file(name, files[name]);
                 });
-                zip.generateAsync({ type: "blob" }).then(function (blob) {
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = "neos-css.zip";
-                    a.click();
-                    URL.revokeObjectURL(url);
-                });
+                zip.generateAsync({ type: "blob" })
+                    .then(function (blob) {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = "tailwind-v4.zip";
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    })
+                    .catch(function (err) {
+                        setStatus(
+                            "error",
+                            "ZIP generation failed: " +
+                                (err && err.message
+                                    ? err.message
+                                    : String(err)),
+                        );
+                    });
             }
 
             function highlightJSON(str) {
@@ -1518,8 +1556,8 @@
                     case "vars":
                         content = toVarsOnly(payload);
                         break;
-                    case "neos-css":
-                        multiFile = toNeosCss(payload);
+                    case "tw4-css":
+                        multiFile = toTw4Css(payload);
                         // Preview: concatenate all files with file headers
                         content = Object.keys(multiFile)
                             .map(function (name) {
@@ -1598,6 +1636,8 @@
 
             // ── Message from plugin ────────────────────────────────────────────────────
             window.onmessage = (event) => {
+                // Only accept messages from the plugin sandbox (our parent frame)
+                if (event.source !== window.parent) return;
                 const msg = event.data.pluginMessage;
                 if (!msg) return;
 
@@ -1680,9 +1720,12 @@
 
             // ── Download ───────────────────────────────────────────────────────────────
             function triggerDownload() {
-                if (currentFormat === "neos-css") {
-                    const files = previewPre._multiFile;
-                    if (files) downloadNeosCssZip(files);
+                if (currentFormat === "tw4-css") {
+                    // Always regenerate from current payload rather than relying on the cached
+                    // DOM property which may be stale if the tab was switched after last render.
+                    if (!payload) return;
+                    const files = toTw4Css(payload);
+                    downloadTw4CssZip(files);
                     return;
                 }
                 const ext =
@@ -1721,14 +1764,24 @@
 
             copyBtn.addEventListener("click", () => {
                 const content = previewPre._raw || previewPre.textContent || "";
-                navigator.clipboard.writeText(content).then(() => {
-                    copyBtn.textContent = "Copied!";
-                    previewPre.classList.add("flash");
-                    setTimeout(() => {
-                        copyBtn.textContent = "Copy";
-                        previewPre.classList.remove("flash");
-                    }, 1500);
-                });
+                navigator.clipboard
+                    .writeText(content)
+                    .then(() => {
+                        copyBtn.textContent = "Copied!";
+                        previewPre.classList.add("flash");
+                        setTimeout(() => {
+                            copyBtn.textContent = "Copy";
+                            previewPre.classList.remove("flash");
+                        }, 1500);
+                    })
+                    .catch(() => {
+                        // Clipboard API unavailable in this Figma sandbox context —
+                        // fall back to a visible hint so the user knows to copy manually.
+                        copyBtn.textContent = "Select & copy manually";
+                        setTimeout(() => {
+                            copyBtn.textContent = "Copy";
+                        }, 2500);
+                    });
             });
 
             resolveBtn.addEventListener("click", () => {
