@@ -1,0 +1,17 @@
+{
+    "name": "Token Exporter",
+    "id": "token-exporter-dev",
+    "api": "1.0.0",
+    "editorType": ["figma"],
+    "main": "code.js",
+    "ui": "ui.html",
+    "documentAccess": "dynamic-page",
+    "permissions": ["teamlibrary"],
+    "networkAccess": {
+        "allowedDomains": [
+            "https://fonts.googleapis.com",
+            "https://fonts.gstatic.com",
+            "https://cdnjs.cloudflare.com"
+        ]
+    }
+}
