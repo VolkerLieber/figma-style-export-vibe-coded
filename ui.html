@@ -1,1846 +1,1458 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Token Exporter</title>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-        <style>
-            *,
-            *::before,
-            *::after {
-                box-sizing: border-box;
-                margin: 0;
-                padding: 0;
-            }
-
-            :root {
-                --bg: #0e0e10;
-                --surface: #18181c;
-                --border: #2a2a32;
-                --muted: #3e3e50;
-                --text-dim: #6b6b80;
-                --text: #c8c8d8;
-                --text-hi: #f0f0f8;
-                --accent: #7c6cfa;
-                --accent-lo: #7c6cfa22;
-                --green: #4ade80;
-                --red: #f87171;
-                --amber: #fbbf24;
-                --radius: 6px;
-                --mono:
-                    ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas,
-                    monospace;
-                --sans:
-                    -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-                    sans-serif;
-            }
-
-            body {
-                font-family: var(--sans);
-                background: var(--bg);
-                color: var(--text);
-                font-size: 13px;
-                line-height: 1.5;
-                height: 100vh;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            }
-
-            /* ── Header ── */
-            header {
-                padding: 16px 20px 14px;
-                border-bottom: 1px solid var(--border);
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                flex-shrink: 0;
-            }
-
-            .logo {
-                display: flex;
-                align-items: center;
-                gap: 9px;
-            }
-
-            .logo-mark {
-                width: 24px;
-                height: 24px;
-                background: var(--accent);
-                border-radius: 4px;
-                display: grid;
-                place-items: center;
-                flex-shrink: 0;
-            }
-
-            .logo-mark svg {
-                display: block;
-            }
-
-            .logo-text {
-                font-size: 13px;
-                font-weight: 600;
-                color: var(--text-hi);
-                letter-spacing: -0.01em;
-            }
-
-            .logo-sub {
-                font-family: var(--mono);
-                font-size: 10px;
-                color: var(--text-dim);
-                letter-spacing: 0.05em;
-                text-transform: uppercase;
-            }
-
-            /* ── Stats grid ── */
-            .stats {
-                display: grid;
-                grid-template-columns: repeat(6, 1fr);
-                gap: 1px;
-                background: var(--border);
-                border-bottom: 1px solid var(--border);
-                flex-shrink: 0;
-            }
-
-            .stat {
-                background: var(--surface);
-                padding: 12px 10px;
-                text-align: center;
-                display: flex;
-                flex-direction: column;
-                gap: 3px;
-            }
-
-            .stat-value {
-                font-family: var(--mono);
-                font-size: 18px;
-                font-weight: 500;
-                color: var(--text-hi);
-                line-height: 1;
-                transition: color 0.3s;
-            }
-
-            .stat-value.has-data {
-                color: var(--accent);
-            }
-
-            .stat-label {
-                font-size: 10px;
-                color: var(--text-dim);
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-            }
-
-            /* ── Format selector ── */
-            .controls {
-                padding: 14px 20px;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                border-bottom: 1px solid var(--border);
-                flex-shrink: 0;
-            }
-
-            .controls-label {
-                font-size: 11px;
-                color: var(--text-dim);
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-                flex-shrink: 0;
-            }
-
-            .format-tabs {
-                display: flex;
-                gap: 2px;
-                background: var(--bg);
-                border: 1px solid var(--border);
-                border-radius: var(--radius);
-                padding: 2px;
-                flex: 1;
-            }
-
-            .fmt-btn {
-                flex: 1;
-                padding: 5px 8px;
-                background: transparent;
-                border: none;
-                border-radius: 4px;
-                font-family: var(--mono);
-                font-size: 11px;
-                color: var(--text-dim);
-                cursor: pointer;
-                transition:
-                    background 0.15s,
-                    color 0.15s;
-                letter-spacing: 0.02em;
-            }
-
-            .fmt-btn:hover {
-                color: var(--text);
-            }
-            .fmt-btn.active {
-                background: var(--accent);
-                color: #fff;
-            }
-
-            /* ── Preview ── */
-            .preview-wrap {
-                flex: 1;
-                overflow: hidden;
-                position: relative;
-                display: flex;
-                flex-direction: column;
-            }
-
-            .preview-header {
-                padding: 10px 20px;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                border-bottom: 1px solid var(--border);
-                flex-shrink: 0;
-            }
-
-            .preview-title {
-                font-size: 11px;
-                color: var(--text-dim);
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            }
-
-            .preview-title .dot {
-                width: 6px;
-                height: 6px;
-                border-radius: 50%;
-                background: var(--muted);
-                transition: background 0.3s;
-            }
-
-            .preview-title .dot.live {
-                background: var(--green);
-            }
-
-            .line-count {
-                font-family: var(--mono);
-                font-size: 10px;
-                color: var(--text-dim);
-            }
-
-            pre {
-                flex: 1;
-                overflow: auto;
-                padding: 16px 20px;
-                font-family: var(--mono);
-                font-size: 11.5px;
-                line-height: 1.7;
-                color: var(--text);
-                background: transparent;
-                white-space: pre;
-            }
-
-            pre::-webkit-scrollbar {
-                width: 4px;
-                height: 4px;
-            }
-            pre::-webkit-scrollbar-track {
-                background: transparent;
-            }
-            pre::-webkit-scrollbar-thumb {
-                background: var(--muted);
-                border-radius: 2px;
-            }
-
-            /* JSON syntax highlighting */
-            .json-key {
-                color: #9d86f5;
-            }
-            .json-string {
-                color: #7dd3a8;
-            }
-            .json-number {
-                color: #fbbf24;
-            }
-            .json-bool {
-                color: #f472b6;
-            }
-            .json-null {
-                color: var(--text-dim);
-            }
-
-            /* ── Footer ── */
-            footer {
-                padding: 12px 20px;
-                border-top: 1px solid var(--border);
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                flex-shrink: 0;
-            }
-
-            .btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                padding: 8px 16px;
-                border: none;
-                border-radius: var(--radius);
-                font-family: var(--sans);
-                font-size: 13px;
-                font-weight: 500;
-                cursor: pointer;
-                transition:
-                    opacity 0.15s,
-                    transform 0.1s;
-                text-decoration: none;
-                white-space: nowrap;
-            }
-
-            .btn:active {
-                transform: scale(0.97);
-            }
-            .btn:disabled {
-                opacity: 0.4;
-                cursor: not-allowed;
-            }
-
-            .btn-primary {
-                background: var(--accent);
-                color: #fff;
-                flex: 1;
-                justify-content: center;
-            }
-
-            .btn-primary:hover:not(:disabled) {
-                opacity: 0.88;
-            }
-
-            .btn-ghost {
-                background: var(--surface);
-                color: var(--text);
-                border: 1px solid var(--border);
-                flex-shrink: 0;
-            }
-
-            .btn-ghost:hover:not(:disabled) {
-                border-color: var(--muted);
-            }
-
-            /* ── Status bar ── */
-            .status-bar {
-                padding: 6px 20px;
-                background: var(--surface);
-                border-top: 1px solid var(--border);
-                font-family: var(--mono);
-                font-size: 10.5px;
-                color: var(--text-dim);
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                min-height: 28px;
-                flex-shrink: 0;
-            }
-
-            .status-bar .status-icon {
-                font-size: 10px;
-            }
-            .status-bar.error {
-                color: var(--red);
-            }
-            .status-bar.success {
-                color: var(--green);
-            }
-            .status-bar.loading {
-                color: var(--amber);
-            }
-
-            /* ── Empty state ── */
-            .empty-state {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                gap: 10px;
-                color: var(--text-dim);
-                padding: 32px;
-                text-align: center;
-            }
-
-            .empty-icon {
-                font-size: 32px;
-                opacity: 0.4;
-                line-height: 1;
-            }
-
-            .empty-title {
-                font-size: 13px;
-                font-weight: 500;
-                color: var(--text);
-            }
-
-            .empty-sub {
-                font-size: 12px;
-                color: var(--text-dim);
-                max-width: 240px;
-            }
-
-            /* ── Warning banner ── */
-            .warning-banner {
-                display: none;
-                padding: 12px 20px;
-                background: #2a1f00;
-                border-bottom: 1px solid #7c5800;
-                gap: 12px;
-                align-items: flex-start;
-                flex-shrink: 0;
-            }
-
-            .warning-banner.visible {
-                display: flex;
-            }
-
-            .warning-icon {
-                font-size: 14px;
-                flex-shrink: 0;
-                line-height: 1.5;
-            }
-
-            .warning-body {
-                flex: 1;
-            }
-
-            .warning-title {
-                font-size: 12px;
-                font-weight: 600;
-                color: var(--amber);
-                margin-bottom: 3px;
-            }
-
-            .warning-text {
-                font-size: 11px;
-                color: #c8a840;
-                line-height: 1.5;
-            }
-
-            .warning-actions {
-                display: flex;
-                gap: 6px;
-                margin-top: 8px;
-            }
-
-            .btn-warn {
-                padding: 5px 12px;
-                border: 1px solid #7c5800;
-                border-radius: var(--radius);
-                background: #3d2e00;
-                color: var(--amber);
-                font-size: 11px;
-                font-weight: 500;
-                cursor: pointer;
-                font-family: var(--sans);
-                transition: background 0.15s;
-            }
-
-            .btn-warn:hover {
-                background: #4d3a00;
-            }
-            .btn-warn:disabled {
-                opacity: 0.4;
-                cursor: not-allowed;
-            }
-
-            .btn-warn-ghost {
-                padding: 5px 12px;
-                border: 1px solid transparent;
-                border-radius: var(--radius);
-                background: transparent;
-                color: #7a6030;
-                font-size: 11px;
-                cursor: pointer;
-                font-family: var(--sans);
-            }
-
-            .btn-warn-ghost:hover {
-                color: #c8a840;
-            }
-            @keyframes spin {
-                to {
-                    transform: rotate(360deg);
-                }
-            }
-
-            .spinner {
-                width: 12px;
-                height: 12px;
-                border: 1.5px solid var(--amber);
-                border-top-color: transparent;
-                border-radius: 50%;
-                animation: spin 0.7s linear infinite;
-                flex-shrink: 0;
-            }
-
-            /* ── Copy flash ── */
-            @keyframes flash {
-                0%,
-                100% {
-                    opacity: 1;
-                }
-                50% {
-                    opacity: 0.5;
-                }
-            }
-            .flash {
-                animation: flash 0.3s ease;
-            }
-        </style>
-    </head>
-    <body>
-        <header>
-            <div class="logo">
-                <div class="logo-mark">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <rect
-                            x="1"
-                            y="1"
-                            width="5"
-                            height="5"
-                            rx="1"
-                            fill="white"
-                            opacity="0.9"
-                        />
-                        <rect
-                            x="8"
-                            y="1"
-                            width="5"
-                            height="5"
-                            rx="1"
-                            fill="white"
-                            opacity="0.6"
-                        />
-                        <rect
-                            x="1"
-                            y="8"
-                            width="5"
-                            height="5"
-                            rx="1"
-                            fill="white"
-                            opacity="0.6"
-                        />
-                        <rect
-                            x="8"
-                            y="8"
-                            width="5"
-                            height="5"
-                            rx="1"
-                            fill="white"
-                            opacity="0.3"
-                        />
-                    </svg>
-                </div>
-                <div>
-                    <div class="logo-text">Token Exporter</div>
-                    <div class="logo-sub">Figma Plugin</div>
-                </div>
-            </div>
-        </header>
-
-        <div class="stats" id="statsGrid">
-            <div class="stat">
-                <span class="stat-value" id="cnt-text">—</span>
-                <span class="stat-label">Text</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="cnt-paint">—</span>
-                <span class="stat-label">Colors</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="cnt-effect">—</span>
-                <span class="stat-label">Effects</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="cnt-collections">—</span>
-                <span class="stat-label">Collections</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="cnt-vars">—</span>
-                <span class="stat-label">Variables</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="cnt-lib-vars">—</span>
-                <span class="stat-label">Lib Vars</span>
-            </div>
-        </div>
-
-        <div class="warning-banner" id="libWarning">
-            <div class="warning-icon">⚠</div>
-            <div class="warning-body">
-                <div class="warning-title">
-                    Library variable values not resolved
-                </div>
-                <div class="warning-text">
-                    <span id="libWarningCount">N</span> library variables were
-                    found but their values require importing references into
-                    this document. Variables already present are reused as-is.
-                    New remote references are managed by Figma and
-                    garbage-collected automatically when unused. Safe to run
-                    multiple times.
-                </div>
-                <div class="warning-actions">
-                    <button class="btn-warn" id="resolveBtn">
-                        Resolve values
-                    </button>
-                    <button class="btn-warn-ghost" id="dismissWarningBtn">
-                        Skip
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="controls">
-            <span class="controls-label">Format</span>
-            <div class="format-tabs">
-                <button class="fmt-btn active" data-fmt="json">JSON</button>
-                <button class="fmt-btn" data-fmt="css">CSS Vars</button>
-                <button class="fmt-btn" data-fmt="text">Text only</button>
-                <button class="fmt-btn" data-fmt="paint">Colors only</button>
-                <button class="fmt-btn" data-fmt="vars">Variables</button>
-                <button class="fmt-btn" data-fmt="tw4-css">Tailwind v4</button>
-            </div>
-        </div>
-
-        <div class="preview-wrap" id="previewWrap">
-            <div class="preview-header">
-                <span class="preview-title">
-                    <span class="dot" id="liveDot"></span>
-                    Preview
-                </span>
-                <span class="line-count" id="lineCount"></span>
-            </div>
-
-            <div class="empty-state" id="emptyState">
-                <div class="empty-icon">◈</div>
-                <div class="empty-title">No tokens yet</div>
-                <div class="empty-sub">
-                    Click Export to extract all styles and variables from this
-                    file.
-                </div>
-            </div>
-
-            <pre id="previewPre" style="display: none"></pre>
-        </div>
-
-        <div class="status-bar" id="statusBar">
-            <span class="status-icon">○</span>
-            <span id="statusMsg">Ready</span>
-        </div>
-
-        <footer>
-            <button class="btn btn-ghost" id="copyBtn" disabled>Copy</button>
-            <button class="btn btn-primary" id="exportBtn">
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <path
-                        d="M6.5 1v7M3.5 5.5l3 3 3-3M2 10h9"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    />
-                </svg>
-                Export &amp; Download
-            </button>
-        </footer>
-
-        <script>
-            // ── State ──────────────────────────────────────────────────────────────────
-            let payload = null;
-            let currentFormat = "json";
-
-            const exportBtn = document.getElementById("exportBtn");
-            const copyBtn = document.getElementById("copyBtn");
-            const previewPre = document.getElementById("previewPre");
-            const emptyState = document.getElementById("emptyState");
-            const statusBar = document.getElementById("statusBar");
-            const statusMsg = document.getElementById("statusMsg");
-            const liveDot = document.getElementById("liveDot");
-            const lineCount = document.getElementById("lineCount");
-            const libWarning = document.getElementById("libWarning");
-            const libWarningCount = document.getElementById("libWarningCount");
-            const resolveBtn = document.getElementById("resolveBtn");
-            const dismissWarning = document.getElementById("dismissWarningBtn");
-
-            // ── Format converters ──────────────────────────────────────────────────────
-
-            function toJSON(data) {
-                return JSON.stringify(data, null, 2);
-            }
-
-            function toCSS(data) {
-                const lines = [":root {"];
-
-                // Paint styles → CSS custom properties
-                if (data.paintStyles?.length) {
-                    lines.push("  /* ── Colors ── */");
-                    for (const style of data.paintStyles) {
-                        const cssName =
-                            "--color-" +
-                            style.name
-                                .toLowerCase()
-                                .replace(/\//g, "-")
-                                .replace(/\s+/g, "-");
-                        const solid = style.paints.find(
-                            (p) => p.type === "SOLID",
-                        );
-                        if (solid?.hex)
-                            lines.push(`  ${cssName}: ${solid.hex};`);
-                    }
-                }
-
-                // Text styles → CSS custom properties
-                if (data.textStyles?.length) {
-                    lines.push("");
-                    lines.push("  /* ── Typography ── */");
-                    for (const style of data.textStyles) {
-                        const base =
-                            "--type-" +
-                            style.name
-                                .toLowerCase()
-                                .replace(/\//g, "-")
-                                .replace(/\s+/g, "-");
-                        lines.push(`  ${base}-size: ${style.fontSize}px;`);
-                        if (style.fontFamily)
-                            lines.push(
-                                `  ${base}-family: "${style.fontFamily}";`,
-                            );
-                        if (style.lineHeight?.unit !== "AUTO") {
-                            const lhUnit =
-                                style.lineHeight?.unit === "PERCENT"
-                                    ? "em"
-                                    : "px";
-                            const lhVal =
-                                style.lineHeight?.unit === "PERCENT"
-                                    ? (style.lineHeight.value / 100).toFixed(3)
-                                    : style.lineHeight?.value;
-                            lines.push(
-                                `  ${base}-line-height: ${lhVal}${lhUnit};`,
-                            );
-                        } else {
-                            lines.push(`  ${base}-line-height: normal;`);
-                        }
-                        if (style.letterSpacing?.value) {
-                            const lsUnit =
-                                style.letterSpacing.unit === "PERCENT"
-                                    ? "em"
-                                    : "px";
-                            const lsVal =
-                                style.letterSpacing.unit === "PERCENT"
-                                    ? (style.letterSpacing.value / 100).toFixed(
-                                          4,
-                                      )
-                                    : style.letterSpacing.value;
-                            lines.push(
-                                `  ${base}-letter-spacing: ${lsVal}${lsUnit};`,
-                            );
-                        }
-                    }
-                }
-
-                // Variables → CSS custom properties
-                for (const collection of data.variables || []) {
-                    const modes = collection.modes;
-                    if (modes.length === 1) {
-                        // Single mode — flat :root vars
-                        lines.push("");
-                        lines.push(`  /* ── ${collection.name} ── */`);
-                        for (const v of collection.variables) {
-                            const cssName =
-                                "--" +
-                                v.name
-                                    .toLowerCase()
-                                    .replace(/\//g, "-")
-                                    .replace(/\s+/g, "-");
-                            const val = Object.values(v.valuesByMode)[0];
-                            if (
-                                val !== null &&
-                                val !== undefined &&
-                                typeof val !== "object"
-                            )
-                                lines.push(`  ${cssName}: ${val};`);
-                        }
-                    } else {
-                        // Multi-mode — emit per-mode attribute selectors
-                        for (
-                            let modeIdx = 0;
-                            modeIdx < modes.length;
-                            modeIdx++
-                        ) {
-                            const mode = modes[modeIdx];
-                            const selector =
-                                modeIdx === 0
-                                    ? ":root"
-                                    : `[data-theme="${mode.name.toLowerCase()}"]`;
-                            lines.push("");
-                            lines.push(
-                                `${selector} {  /* ${collection.name} / ${mode.name} */`,
-                            );
-                            for (const v of collection.variables) {
-                                const val = v.valuesByMode[mode.name];
-                                if (val === undefined) continue;
-                                const cssName =
-                                    "--" +
-                                    v.name
-                                        .toLowerCase()
-                                        .replace(/\//g, "-")
-                                        .replace(/\s+/g, "-");
-                                if (
-                                    val &&
-                                    typeof val === "object" &&
-                                    val.$alias
-                                ) {
-                                    const aliasName =
-                                        "--" +
-                                        val.$alias
-                                            .toLowerCase()
-                                            .replace(/\//g, "-")
-                                            .replace(/\s+/g, "-");
-                                    lines.push(
-                                        `  ${cssName}: var(${aliasName});`,
-                                    );
-                                } else if (
-                                    typeof val === "string" ||
-                                    typeof val === "number" ||
-                                    typeof val === "boolean"
-                                ) {
-                                    lines.push(`  ${cssName}: ${val};`);
-                                }
-                            }
-                            lines.push("}");
-                        }
-                    }
-                }
-
-                lines.push("}");
-                return lines.join("\n");
-            }
-
-            function toTextOnly(data) {
-                if (!data.textStyles?.length)
-                    return "/* No text styles found */";
-                return data.textStyles
-                    .map((s) => {
-                        const lh =
-                            s.lineHeight?.unit === "AUTO"
-                                ? "auto"
-                                : `${s.lineHeight?.value}${s.lineHeight?.unit === "PERCENT" ? "%" : "px"}`;
-                        const ls = s.letterSpacing?.value
-                            ? `${s.letterSpacing.value}${s.letterSpacing.unit === "PERCENT" ? "%" : "px"}`
-                            : "0";
-
-                        return [
-                            `/* ${s.name} */`,
-                            `font-family: "${s.fontFamily}", sans-serif;`,
-                            `font-style: ${s.fontStyle || "Regular"};`,
-                            `font-size: ${s.fontSize}px;`,
-                            `line-height: ${lh};`,
-                            `letter-spacing: ${ls};`,
-                            `text-transform: ${s.textCase === "UPPER" ? "uppercase" : s.textCase === "LOWER" ? "lowercase" : s.textCase === "TITLE" ? "capitalize" : "none"};`,
-                            `text-decoration: ${s.textDecoration === "NONE" ? "none" : s.textDecoration?.toLowerCase() || "none"};`,
-                        ].join("\n");
-                    })
-                    .join("\n\n");
-            }
-
-            function toPaintOnly(data) {
-                if (!data.paintStyles?.length)
-                    return "/* No paint styles found */";
-                return data.paintStyles
-                    .map((s) => {
-                        const solid = s.paints.find((p) => p.type === "SOLID");
-                        const value =
-                            solid?.hex ?? s.paints[0]?.type ?? "unknown";
-                        const varRef = solid?.boundVariable
-                            ? ` /* → ${solid.boundVariable.name} */`
-                            : "";
-                        return `${s.name}: ${value};${varRef}`;
-                    })
-                    .join("\n");
-            }
-
-            function toVarsOnly(data) {
-                const lines = [];
-
-                if (!data.variables?.length && !data.libraryVariables?.length) {
-                    return "/* No variables found */";
-                }
-
-                // Local variables
-                for (const col of data.variables || []) {
-                    lines.push(`/* ════ ${col.name} (local) ════ */`);
-                    for (const v of col.variables) {
-                        lines.push(`/* ${v.name} [${v.resolvedType}] */`);
-                        for (const [mode, val] of Object.entries(
-                            v.valuesByMode,
-                        )) {
-                            const display =
-                                typeof val === "object" && val?.$alias
-                                    ? `→ ${val.$alias}`
-                                    : String(val);
-                            lines.push(`  ${mode}: ${display}`);
-                        }
-                    }
-                    lines.push("");
-                }
-
-                // Library variables
-                for (const col of data.libraryVariables || []) {
-                    const resolved = col.valuesResolved;
-                    lines.push(
-                        `/* ════ ${col.name} (library: ${col.libraryName})${resolved ? "" : " — values not resolved"} ════ */`,
-                    );
-                    for (const v of col.variables) {
-                        if (resolved && v.valuesByMode) {
-                            lines.push(`/* ${v.name} [${v.resolvedType}] */`);
-                            for (const [modeId, val] of Object.entries(
-                                v.valuesByMode,
-                            )) {
-                                const display =
-                                    typeof val === "object" && val?.$alias
-                                        ? `→ ${val.$alias}`
-                                        : String(val);
-                                lines.push(`  ${modeId}: ${display}`);
-                            }
-                        } else {
-                            lines.push(`  ${v.name} [${v.resolvedType}]`);
-                        }
-                    }
-                    lines.push("");
-                }
-
-                return lines.join("\n");
-            }
-
-            // ── Tailwind v4 CSS format ─────────────────────────────────────────────────
-            // Produces 5 files matching the project's CSS architecture:
-            //   primitives.css  → @theme with raw hex values (primitive collections)
-            //   semantics.css   → @theme with semantic alias vars
-            //   themes.css      → :where([data-theme="..."]) > * blocks (multi-mode collections)
-            //   sizes.css       → @utility text-* size composites from text styles
-            //   texts.css       → @utility texts-* font/weight/leading composites from text styles
-
-            // "Primitives/Brand/Blue/SWK-blue-50" → "primitives-brand-blue-swk-blue-50"
-            function toCssVarName(path) {
-                return path
-                    .toLowerCase()
-                    .replace(/\//g, "-")
-                    .replace(/\s+/g, "-")
-                    .replace(/[^\x00-\x7F]/g, "")
-                    .replace(/[^a-z0-9-]/g, "-")
-                    .replace(/-+/g, "-")
-                    .replace(/^-|-$/g, "");
-            }
-
-            // Text style utility segment: last path segment, stripping a leading group
-            // prefix if it duplicates the group name.
-            // "Text/Text Body"    → "body"     (strips leading "Text " from segment)
-            // "Text/Eyebrow"      → "eyebrow"  (no match, kept as-is)
-            // "Headings/h1 Display" → "h1-display"
-            function lastSegment(name) {
-                var parts = name.split("/");
-                var group = parts[0];
-                var segment = parts[parts.length - 1];
-                // Strip leading group word from segment if it matches (e.g. "Text Body" under "Text")
-                var pattern = new RegExp(
-                    "^" + group.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s+",
-                    "i",
-                );
-                var cleaned = segment.replace(pattern, "").trim();
-                return toCssVarName(cleaned || segment);
-            }
-
-            // Semantic var name: drop first path segment to match project convention.
-            // "Text/Text-dark" → "text-dark"  (not "text-text-dark")
-            // "Backgrounds/Section-bg-default" → "section-bg-default"
-            // "Icons/Fa-icon-dark" → "fa-icon-dark"
-            function semanticVarName(name) {
-                var parts = name.split("/");
-                var relevant = parts.length > 1 ? parts.slice(1) : parts;
-                return toCssVarName(relevant.join("/"));
-            }
-
-            function resolveAliasVarName(aliasName, aliasId, allVarsMap) {
-                // Try by ID first (reliable) — $aliasId is the Figma variable ID
-                if (aliasId) {
-                    var byId = allVarsMap.get(aliasId);
-                    if (byId) {
-                        return byId._isPrimitive
-                            ? "--color-primitives-" + toCssVarName(byId.name)
-                            : "--color-" + semanticVarName(byId.name);
-                    }
-                }
-                // Fallback: construct from name string
-                if (aliasName) {
-                    var lc = aliasName.toLowerCase();
-                    var isPrim =
-                        lc.startsWith("primitives/") || lc.startsWith("brand/");
-                    return isPrim
-                        ? "--color-primitives-" + toCssVarName(aliasName)
-                        : "--color-" + semanticVarName(aliasName);
-                }
-                return null;
-            }
-
-            function toTw4Css(data) {
-                // Flatten all local variables into a Map keyed by id, tagging primitives.
-                // Using a Map gives O(1) lookup in resolveAliasVarName vs O(n) with .find().
-                var allVars = new Map();
-                (data.variables || []).forEach(function (col) {
-                    var isPrim = /primitiv/i.test(col.name);
-                    col.variables.forEach(function (v) {
-                        allVars.set(
-                            v.id,
-                            Object.assign({}, v, { _isPrimitive: isPrim }),
-                        );
-                    });
-                });
-                // Library vars: values may not be resolved, but include for alias lookups
-                (data.libraryVariables || []).forEach(function (col) {
-                    var isPrim = /primitiv/i.test(col.name);
-                    col.variables.forEach(function (v) {
-                        if (v.id)
-                            allVars.set(
-                                v.id,
-                                Object.assign({}, v, { _isPrimitive: isPrim }),
-                            );
-                    });
-                });
-
-                // ── Categorise collections ───────────────────────────────────────────────
-                var primitiveCollections = [];
-                var semanticCollections = [];
-                var themeCollections = [];
-
-                (data.variables || []).forEach(function (col) {
-                    var hasColors = col.variables.some(function (v) {
-                        return v.resolvedType === "COLOR";
-                    });
-                    // Primitives are identified by name — they always go to primitives.css
-                    // regardless of mode count. Theme check is only for non-primitive collections.
-                    if (/primitiv/i.test(col.name)) {
-                        primitiveCollections.push(col);
-                    } else if (col.modes.length > 1 && hasColors) {
-                        themeCollections.push(col);
-                    } else {
-                        semanticCollections.push(col);
-                    }
-                });
-
-                // ── primitives.css ───────────────────────────────────────────────────────
-                var primLines = ["@theme {"];
-                primitiveCollections.forEach(function (col) {
-                    var colorVars = col.variables.filter(function (v) {
-                        return v.resolvedType === "COLOR";
-                    });
-                    if (colorVars.length)
-                        primLines.push("  /* " + col.name + " */");
-                    colorVars
-                        .slice()
-                        .sort(function (a, b) {
-                            return a.name.localeCompare(b.name);
-                        })
-                        .forEach(function (v) {
-                            var val = Object.values(v.valuesByMode)[0];
-                            if (!val) return;
-                            var cssName =
-                                "--color-primitives-" + toCssVarName(v.name);
-                            if (typeof val === "string") {
-                                primLines.push(
-                                    "  " + cssName + ": " + val + ";",
-                                );
-                            }
-                            // Raw primitives should not be aliases — skip if they are
-                        });
-                });
-                primLines.push("}");
-
-                // ── semantics.css ────────────────────────────────────────────────────────
-                // Single-mode collections (semantic aliases).
-                // Var name drops the first path segment to match project convention:
-                // "Text/Text-dark" → --color-text-dark (not --color-text-text-dark)
-                // Helper: emit one semantic color variable line into an array
-                function emitSemanticVar(lines, v, modeValues) {
-                    var cssName = "--color-" + semanticVarName(v.name);
-                    var val =
-                        modeValues !== undefined
-                            ? modeValues
-                            : Object.values(v.valuesByMode)[0];
-                    if (typeof val === "string") {
-                        lines.push("  " + cssName + ": " + val + ";");
-                    } else if (val && val.$alias) {
-                        var refName = resolveAliasVarName(
-                            val.$alias,
-                            val.$aliasId,
-                            allVars,
-                        );
-                        if (refName) {
-                            lines.push(
-                                "  " + cssName + ": var(" + refName + ");",
-                            );
-                        } else {
-                            lines.push("  /* " + cssName + ": <unresolved> */");
-                        }
-                    } else {
-                        lines.push("  /* " + cssName + ": <unresolved> */");
-                    }
-                }
-
-                var semLines = ["@theme {"];
-
-                // Single-mode semantic collections
-                semanticCollections.forEach(function (col) {
-                    var colorVars = col.variables.filter(function (v) {
-                        return v.resolvedType === "COLOR";
-                    });
-                    if (colorVars.length)
-                        semLines.push("  /* " + col.name + " */");
-                    colorVars.forEach(function (v) {
-                        emitSemanticVar(semLines, v);
-                    });
-                });
-
-                // Multi-mode (theme) collections: also emit their Default mode into @theme
-                // so Tailwind generates utility classes (bg-text-dark, etc.) at build time.
-                // The runtime overrides live in themes.css.
-                themeCollections.forEach(function (col) {
-                    var defaultMode = col.modes.find(function (m) {
-                        return m.name.toLowerCase() === "default";
-                    });
-                    if (!defaultMode) return;
-                    var colorVars = col.variables.filter(function (v) {
-                        return v.resolvedType === "COLOR";
-                    });
-                    if (colorVars.length)
-                        semLines.push("  /* " + col.name + " (Default) */");
-                    colorVars.forEach(function (v) {
-                        // Use defaultMode.name (not hardcoded 'Default') so case variants like 'default' work
-                        emitSemanticVar(
-                            semLines,
-                            v,
-                            v.valuesByMode[defaultMode.name],
-                        );
-                    });
-                });
-
-                semLines.push("}");
-
-                // ── themes.css ───────────────────────────────────────────────────────────
-                // Multi-mode collections. Each mode → :where([data-theme="..."]) > * block.
-                // Var name uses same semanticVarName (drops first segment).
-                var themeLines = [];
-                themeCollections.forEach(function (col) {
-                    col.modes.forEach(function (mode) {
-                        var modeName = mode.name;
-                        var themeSlug = toCssVarName(modeName);
-                        var selector =
-                            ':where([data-theme="' + themeSlug + '"]) > *';
-                        themeLines.push(selector + " {");
-
-                        col.variables
-                            .filter(function (v) {
-                                return v.resolvedType === "COLOR";
-                            })
-                            .forEach(function (v) {
-                                var val = v.valuesByMode[modeName];
-                                if (val === undefined) return;
-                                var cssName =
-                                    "--color-" + semanticVarName(v.name);
-
-                                if (typeof val === "string") {
-                                    themeLines.push(
-                                        "  " + cssName + ": " + val + ";",
-                                    );
-                                } else if (val && val.$alias) {
-                                    var refName = resolveAliasVarName(
-                                        val.$alias,
-                                        val.$aliasId,
-                                        allVars,
-                                    );
-                                    if (refName) {
-                                        themeLines.push(
-                                            "  " +
-                                                cssName +
-                                                ": var(" +
-                                                refName +
-                                                ");",
-                                        );
-                                    } else {
-                                        themeLines.push(
-                                            "  /* " +
-                                                cssName +
-                                                ": <unresolved> */",
-                                        );
-                                    }
-                                } else {
-                                    themeLines.push(
-                                        "  /* " + cssName + ": <unresolved> */",
-                                    );
-                                }
-                            });
-
-                        themeLines.push("}");
-                        themeLines.push("");
-                    });
-                });
-
-                // ── sizes.css — @utility text-* from text styles ─────────────────────────
-                // Utility name: last path segment — "Headings/H1 Display" → text-h1-display
-                //
-                // Responsive strategy:
-                //   If the text style's fontSize is bound to a variable that has multiple
-                //   modes (e.g. Desktop / Tablet / Mobile), we map those mode names to
-                //   Tailwind breakpoint prefixes and generate a responsive @apply chain.
-                //   Mode name → breakpoint prefix mapping (mobile-first, case-insensitive):
-                //     Mobile / SM / Small / XS → (no prefix, base)
-                //     Tablet / MD / Medium → md:
-                //     Desktop / LG / Large / Default → lg:
-                //   If no multi-mode binding exists, fall back to the raw fontSize scalar.
-
-                // Tailwind built-in text-* utilities that must not be shadowed by @utility.
-                // Emitting "@utility text-base { @apply text-base; }" causes infinite recursion.
-                var TW_BUILTIN_TEXT = {
-                    "text-xs": true,
-                    "text-sm": true,
-                    "text-base": true,
-                    "text-lg": true,
-                    "text-xl": true,
-                    "text-2xl": true,
-                    "text-3xl": true,
-                    "text-4xl": true,
-                    "text-5xl": true,
-                    "text-6xl": true,
-                    "text-7xl": true,
-                    "text-8xl": true,
-                    "text-9xl": true,
-                };
-
-                var sizeLines = [];
-
-                // Build a lookup: variable id → variable object (with valuesByMode)
-                var varById = {};
-                (data.variables || []).forEach(function (col) {
-                    col.variables.forEach(function (v) {
-                        varById[v.id] = v;
-                    });
-                });
-
-                function pxToTwSize(px) {
-                    if (px <= 10) return "text-[10px]";
-                    if (px <= 12) return "text-xs";
-                    if (px <= 14) return "text-sm";
-                    if (px <= 16) return "text-base";
-                    if (px <= 18) return "text-lg";
-                    if (px <= 20) return "text-xl";
-                    if (px <= 24) return "text-2xl";
-                    if (px <= 30) return "text-3xl";
-                    if (px <= 36) return "text-4xl";
-                    if (px <= 48) return "text-5xl";
-                    if (px <= 60) return "text-6xl";
-                    return "text-[" + px + "px]";
-                }
-
-                // Map Figma mode name → Tailwind breakpoint prefix (mobile-first)
-                function modeToBreakpoint(modeName) {
-                    var m = modeName.toLowerCase().trim();
-                    if (/mobile|sm\b|small|xs\b/.test(m)) return "";
-                    if (/tablet|md\b|medium/.test(m)) return "md:";
-                    if (/desktop|lg\b|large|default/.test(m)) return "lg:";
-                    return null;
-                }
-
-                // Resolve a FLOAT variable mode value to a Tailwind text-* class.
-                // Three cases in priority order:
-                //   1. Alias name like "size/text-6xl" or "Text size/6xl" → extract last segment
-                //   2. Numeric px value → map via pxToTwSize
-                //   3. Alias that resolves to another local var with a numeric value
-                // Known Tailwind text-* size classes that are valid @apply targets
-                var TW_TEXT_SIZES = [
-                    "text-xs",
-                    "text-sm",
-                    "text-base",
-                    "text-lg",
-                    "text-xl",
-                    "text-2xl",
-                    "text-3xl",
-                    "text-4xl",
-                    "text-5xl",
-                    "text-6xl",
-                    "text-7xl",
-                    "text-8xl",
-                    "text-9xl",
-                ];
-
-                function resolveFloatToTwClass(raw, _depth) {
-                    if (!raw) return null;
-                    // Guard against circular alias chains (invalid but possible with stale library data)
-                    if ((_depth || 0) > 5) return null;
-
-                    // Alias with a resolved name (after code.js fix)
-                    if (raw && raw.$alias && typeof raw.$alias === "string") {
-                        var aliasName = raw.$alias;
-                        // Only use name-based resolution if it looks like a name, not a raw ID
-                        if (!aliasName.startsWith("VariableID:")) {
-                            var seg = aliasName
-                                .split("/")
-                                .pop()
-                                .toLowerCase()
-                                .trim();
-                            // Normalise: remove anything that isn't alphanumeric, dash or space
-                            seg = seg.replace(/[^a-z0-9\s-]/g, "").trim();
-                            seg = seg
-                                .replace(/\s+/g, "-")
-                                .replace(/-+/g, "-")
-                                .replace(/^-|-$/g, "");
-                            if (!seg) return null;
-                            if (!seg.startsWith("text-")) seg = "text-" + seg;
-                            // Validate it is a recognised Tailwind size — if not, bail so we
-                            // fall back to the scalar fontSize via pxToTwSize
-                            if (TW_TEXT_SIZES.indexOf(seg) === -1) return null;
-                            return seg;
-                        }
-                        // Unresolved ID alias — try local varById (with depth guard)
-                        if (raw.$aliasId && varById[raw.$aliasId]) {
-                            return resolveFloatToTwClass(
-                                Object.values(
-                                    varById[raw.$aliasId].valuesByMode || {},
-                                )[0],
-                                (_depth || 0) + 1,
-                            );
-                        }
-                        return null;
-                    }
-
-                    // Numeric px
-                    if (typeof raw === "number") return pxToTwSize(raw);
-
-                    return null;
-                }
-
-                (data.textStyles || []).forEach(function (style) {
-                    var utilName = "text-" + lastSegment(style.name);
-                    // Early exit: skip utilities that would shadow a Tailwind built-in
-                    if (TW_BUILTIN_TEXT[utilName]) return;
-
-                    var boundFontSize =
-                        style.boundVariables && style.boundVariables.fontSize;
-                    // boundFontSize.id = local variable ID (from resolveVariableAlias)
-                    // boundFontSize.$aliasId = library variable ID (from resolveValue in code.js)
-                    var boundVarId =
-                        boundFontSize &&
-                        (boundFontSize.id || boundFontSize["$aliasId"]);
-                    var boundVar = boundVarId ? varById[boundVarId] : null;
-
-                    var applies = [];
-
-                    if (
-                        boundVar &&
-                        Object.keys(boundVar.valuesByMode || {}).length > 1
-                    ) {
-                        var order = { "": 0, "md:": 1, "lg:": 2 };
-                        var breakpointSizes = [];
-
-                        Object.keys(boundVar.valuesByMode).forEach(
-                            function (modeName) {
-                                var bp = modeToBreakpoint(modeName);
-                                if (bp === null) return;
-                                var cls = resolveFloatToTwClass(
-                                    boundVar.valuesByMode[modeName],
-                                );
-                                if (cls)
-                                    breakpointSizes.push({ bp: bp, cls: cls });
-                            },
-                        );
-
-                        breakpointSizes.sort(function (a, b) {
-                            return (order[a.bp] || 0) - (order[b.bp] || 0);
-                        });
-
-                        // Deduplicate adjacent identical classes
-                        var lastCls = null;
-                        breakpointSizes.forEach(function (entry) {
-                            if (entry.cls !== lastCls) {
-                                applies.push(entry.bp + entry.cls);
-                                lastCls = entry.cls;
-                            }
-                        });
-                    }
-
-                    if (!applies.length && style.fontSize) {
-                        applies.push(pxToTwSize(style.fontSize));
-                    }
-
-                    if (!applies.length) return;
-
-                    sizeLines.push("@utility " + utilName + " {");
-                    sizeLines.push("    @apply " + applies.join(" ") + ";");
-                    sizeLines.push("}");
-                });
-
-                // ── texts.css — @utility {segment}-text font composites ─────────────────
-                // Utility name: "{segment}-text" (suffix convention, matching project pattern).
-                // @apply references the text-* utility from sizes.css (same segment name),
-                // plus font-family, font-weight, and line-height.
-                var textLines = [];
-
-                function weightToTw(style) {
-                    var s = (style.fontStyle || "").toLowerCase();
-                    if (s.includes("thin")) return "font-thin";
-                    if (s.includes("extralight") || s.includes("extra-light"))
-                        return "font-extralight";
-                    if (s.includes("light")) return "font-light";
-                    if (s.includes("semibold") || s.includes("semi-bold"))
-                        return "font-semibold";
-                    if (s.includes("extrabold") || s.includes("extra-bold"))
-                        return "font-extrabold";
-                    if (s.includes("bold")) return "font-bold";
-                    if (s.includes("black") || s.includes("heavy"))
-                        return "font-black";
-                    if (s.includes("medium")) return "font-medium";
-                    return "font-normal";
-                }
-
-                function lineHeightToTw(lh) {
-                    if (!lh || lh.unit === "AUTO") return null;
-                    if (lh.unit === "PERCENT") {
-                        var pct = Math.round(lh.value);
-                        if (pct === 100) return "leading-none";
-                        if (pct === 110 || pct === 112) return "leading-tight";
-                        if (pct === 120) return "leading-120p";
-                        if (pct === 125) return "leading-snug";
-                        if (pct === 130) return "leading-130p";
-                        if (pct === 140) return "leading-140p";
-                        if (pct === 150) return "leading-normal";
-                        if (pct === 160) return "leading-160p";
-                        if (pct === 175) return "leading-[175%]";
-                        return "leading-[" + pct + "%]";
-                    }
-                    return "leading-[" + lh.value + "px]";
-                }
-
-                function familyToTw(family) {
-                    if (!family) return null;
-                    if (/inter/i.test(family)) return "font-inter";
-                    if (/greycliff|greyc/i.test(family))
-                        return "font-greycliff-cf";
-                    return null;
-                }
-
-                (data.textStyles || []).forEach(function (style) {
-                    var seg = lastSegment(style.name);
-                    var utilName = seg + "-text";
-                    // Reference the size utility from sizes.css by the same last-segment name
-                    var sizeUtil = "text-" + seg;
-
-                    // Skip if the corresponding size utility was not generated (no fontSize data)
-                    // and the sizeUtil would also not exist as a Tailwind built-in —
-                    // an @apply of a non-existent utility causes a build error.
-                    var sizeUtilExists =
-                        TW_BUILTIN_TEXT[sizeUtil] || style.fontSize;
-                    if (!sizeUtilExists) return;
-
-                    var applies = [];
-                    var fam = familyToTw(style.fontFamily);
-                    if (fam) applies.push(fam);
-                    applies.push(weightToTw(style));
-                    var lh = lineHeightToTw(style.lineHeight);
-                    if (lh) applies.push(lh);
-                    // Use the generated size utility rather than raw px, so both files stay in sync
-                    applies.push(sizeUtil);
-
-                    textLines.push("@utility " + utilName + " {");
-                    textLines.push("    @apply " + applies.join(" ") + ";");
-                    textLines.push("}");
-                });
-
-                return {
-                    "primitives.css": primLines.join("\n"),
-                    "semantics.css": semLines.join("\n"),
-                    "themes.css": themeLines.join("\n"),
-                    "sizes.css": sizeLines.join("\n"),
-                    "texts.css": textLines.join("\n"),
-                };
-            }
-
-            // ── Multi-file ZIP download ─────────────────────────────────────────────────
-            function downloadTw4CssZip(files) {
-                // Use JSZip (loaded from CDN)
-                if (typeof JSZip === "undefined") {
-                    setStatus(
-                        "error",
-                        "JSZip not loaded — check network connection",
-                    );
-                    return;
-                }
-                const zip = new JSZip();
-                Object.keys(files).forEach(function (name) {
-                    zip.file(name, files[name]);
-                });
-                zip.generateAsync({ type: "blob" })
-                    .then(function (blob) {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = "tailwind-v4.zip";
-                        a.click();
-                        URL.revokeObjectURL(url);
-                    })
-                    .catch(function (err) {
-                        setStatus(
-                            "error",
-                            "ZIP generation failed: " +
-                                (err && err.message
-                                    ? err.message
-                                    : String(err)),
-                        );
-                    });
-            }
-
-            function highlightJSON(str) {
-                return str
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(
-                        /"([^"]+)":/g,
-                        '<span class="json-key">"$1"</span>:',
-                    )
-                    .replace(
-                        /: "([^"]*)"/g,
-                        ': <span class="json-string">"$1"</span>',
-                    )
-                    .replace(
-                        /: (-?\d+\.?\d*)/g,
-                        ': <span class="json-number">$1</span>',
-                    )
-                    .replace(
-                        /: (true|false)/g,
-                        ': <span class="json-bool">$1</span>',
-                    )
-                    .replace(
-                        /: null/g,
-                        ': <span class="json-null">null</span>',
-                    );
-            }
-
-            // ── Render preview ─────────────────────────────────────────────────────────
-            function renderPreview() {
-                if (!payload) return;
-
-                let content;
-                let multiFile = null;
-
-                switch (currentFormat) {
-                    case "json":
-                        content = toJSON(payload);
-                        break;
-                    case "css":
-                        content = toCSS(payload);
-                        break;
-                    case "text":
-                        content = toTextOnly(payload);
-                        break;
-                    case "paint":
-                        content = toPaintOnly(payload);
-                        break;
-                    case "vars":
-                        content = toVarsOnly(payload);
-                        break;
-                    case "tw4-css":
-                        multiFile = toTw4Css(payload);
-                        // Preview: concatenate all files with file headers
-                        content = Object.keys(multiFile)
-                            .map(function (name) {
-                                return (
-                                    "/* ══════ " +
-                                    name +
-                                    " ══════ */\n" +
-                                    multiFile[name]
-                                );
-                            })
-                            .join("\n\n");
-                        break;
-                    default:
-                        content = toJSON(payload);
-                }
-
-                const lines = content.split("\n").length;
-                lineCount.textContent = `${lines} lines`;
-
-                previewPre.innerHTML =
-                    currentFormat === "json"
-                        ? highlightJSON(content)
-                        : escapeHTML(content);
-                previewPre.style.display = "block";
-                emptyState.style.display = "none";
-                liveDot.classList.add("live");
-                copyBtn.disabled = false;
-
-                previewPre._raw = content;
-                previewPre._multiFile = multiFile; // store for zip download
-            }
-
-            function escapeHTML(str) {
-                return str
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;");
-            }
-
-            // ── Status ─────────────────────────────────────────────────────────────────
-            function setStatus(type, msg) {
-                statusBar.className = "status-bar " + type;
-                const icons = {
-                    loading: "",
-                    error: "✕",
-                    success: "✓",
-                    "": "○",
-                };
-                const iconEl = statusBar.querySelector(".status-icon");
-
-                if (type === "loading") {
-                    iconEl.innerHTML = '<div class="spinner"></div>';
-                } else {
-                    iconEl.innerHTML = icons[type] || "○";
-                }
-                statusMsg.textContent = msg;
-            }
-
-            // ── Update stat counters ───────────────────────────────────────────────────
-            function updateStats(counts) {
-                const map = {
-                    "cnt-text": counts.textStyles,
-                    "cnt-paint": counts.paintStyles,
-                    "cnt-effect": counts.effectStyles,
-                    "cnt-collections": counts.variableCollections,
-                    "cnt-vars": counts.variables,
-                    "cnt-lib-vars": counts.libraryVariables,
-                };
-                for (const [id, val] of Object.entries(map)) {
-                    const el = document.getElementById(id);
-                    if (!el) continue;
-                    el.textContent = val ?? "—";
-                    el.classList.toggle("has-data", (val ?? 0) > 0);
-                }
-            }
-
-            // ── Message from plugin ────────────────────────────────────────────────────
-            window.onmessage = (event) => {
-                const msg = event.data.pluginMessage;
-                // Only process messages that carry a pluginMessage payload (Figma plugin protocol).
-                // Note: event.source is null in Figma's sandboxed iframe — do NOT check it.
-                if (!msg) return;
-
-                if (msg.type === "STATUS") {
-                    clearTimeout(exportWatchdog); // plugin is alive — reset watchdog
-                    exportWatchdog = null;
-                    setStatus("loading", msg.message);
-                }
-
-                if (msg.type === "RESULT") {
-                    clearTimeout(exportWatchdog);
-                    exportWatchdog = null;
-                    payload = msg.payload;
-                    updateStats(payload.meta.counts);
-                    renderPreview();
-                    exportBtn.disabled = false;
-
-                    const total =
-                        payload.meta.counts.textStyles +
-                        payload.meta.counts.paintStyles +
-                        payload.meta.counts.effectStyles +
-                        payload.meta.counts.variables +
-                        (payload.meta.counts.libraryVariables ?? 0);
-
-                    setStatus(
-                        "success",
-                        `Exported ${total} tokens · ${new Date().toLocaleTimeString()}`,
-                    );
-                    triggerDownload();
-
-                    // Show warning banner if there are unresolved library variables
-                    const libVarCount =
-                        payload.meta.counts.libraryVariables ?? 0;
-                    if (libVarCount > 0) {
-                        libWarningCount.textContent = libVarCount;
-                        libWarning.classList.add("visible");
-                    }
-                }
-
-                if (msg.type === "LIB_VARS_RESOLVED") {
-                    // Merge resolved library variables back into payload
-                    payload.libraryVariables = msg.libraryVariables;
-
-                    const totalLibVars = msg.libraryVariables.reduce(function (
-                        acc,
-                        c,
-                    ) {
-                        return acc + c.variables.length;
-                    }, 0);
-                    payload.meta.counts.libraryVariables = totalLibVars;
-
-                    // Count newly introduced imports across all collections
-                    let newlyImported = 0;
-                    msg.libraryVariables.forEach(function (c) {
-                        if (c.importStats)
-                            newlyImported += c.importStats.newlyImported || 0;
-                    });
-
-                    libWarning.classList.remove("visible");
-                    resolveBtn.disabled = false;
-                    resolveBtn.textContent = "Resolve values";
-
-                    renderPreview();
-                    triggerDownload();
-
-                    const importMsg =
-                        newlyImported > 0
-                            ? newlyImported +
-                              " new reference(s) added to document (remote, Figma-managed)"
-                            : "all variables were already present in document";
-                    setStatus(
-                        "success",
-                        "Library values resolved \u00b7 " + importMsg,
-                    );
-                }
-
-                if (msg.type === "ERROR") {
-                    clearTimeout(exportWatchdog);
-                    exportWatchdog = null;
-                    setStatus("error", msg.message);
-                    exportBtn.disabled = false;
-                    resolveBtn.disabled = false;
-                    resolveBtn.textContent = "Resolve values";
-                }
-            };
-
-            // ── Download ───────────────────────────────────────────────────────────────
-            function triggerDownload() {
-                if (currentFormat === "tw4-css") {
-                    // Always regenerate from current payload rather than relying on the cached
-                    // DOM property which may be stale if the tab was switched after last render.
-                    if (!payload) return;
-                    const files = toTw4Css(payload);
-                    downloadTw4CssZip(files);
-                    return;
-                }
-                const ext =
-                    {
-                        json: "json",
-                        css: "css",
-                        text: "css",
-                        paint: "txt",
-                        vars: "txt",
-                    }[currentFormat] || "json";
-                const filename = `figma-tokens.${ext}`;
-                const content = previewPre._raw || "";
-                const mime = ext === "json" ? "application/json" : "text/plain";
-
-                const blob = new Blob([content], { type: mime });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = filename;
-                a.click();
-                URL.revokeObjectURL(url);
-            }
-
-            // ── Events ─────────────────────────────────────────────────────────────────
-            let exportWatchdog = null;
-
-            exportBtn.addEventListener("click", () => {
-                if (payload) {
-                    // Already have data — just re-download
-                    renderPreview();
-                    triggerDownload();
-                    return;
-                }
-                exportBtn.disabled = true;
-                setStatus("loading", "Starting export…");
-
-                // Watchdog: if no STATUS or RESULT arrives within 15 s, surface an error
-                // so the user isn't left staring at a frozen spinner.
-                clearTimeout(exportWatchdog);
-                exportWatchdog = setTimeout(() => {
-                    if (!payload) {
-                        exportBtn.disabled = false;
-                        setStatus(
-                            "error",
-                            "Export timed out — no response from plugin. Try re-opening the plugin.",
-                        );
-                    }
-                }, 15000);
-
-                parent.postMessage({ pluginMessage: { type: "EXPORT" } }, "*");
-            });
-
-            copyBtn.addEventListener("click", () => {
-                const content = previewPre._raw || previewPre.textContent || "";
-                navigator.clipboard
-                    .writeText(content)
-                    .then(() => {
-                        copyBtn.textContent = "Copied!";
-                        previewPre.classList.add("flash");
-                        setTimeout(() => {
-                            copyBtn.textContent = "Copy";
-                            previewPre.classList.remove("flash");
-                        }, 1500);
-                    })
-                    .catch(() => {
-                        // Clipboard API unavailable in this Figma sandbox context —
-                        // fall back to a visible hint so the user knows to copy manually.
-                        copyBtn.textContent = "Select & copy manually";
-                        setTimeout(() => {
-                            copyBtn.textContent = "Copy";
-                        }, 2500);
-                    });
-            });
-
-            resolveBtn.addEventListener("click", () => {
-                if (
-                    !payload ||
-                    !payload.libraryVariables ||
-                    !payload.libraryVariables.length
-                )
-                    return;
-                resolveBtn.disabled = true;
-                resolveBtn.textContent = "Resolving…";
-                setStatus("loading", "Importing library variable references…");
-                parent.postMessage(
-                    {
-                        pluginMessage: {
-                            type: "RESOLVE_LIB_VARS",
-                            libraryVariables: payload.libraryVariables,
-                        },
-                    },
-                    "*",
-                );
-            });
-
-            dismissWarning.addEventListener("click", () => {
-                libWarning.classList.remove("visible");
-            });
-
-            document.querySelectorAll(".fmt-btn").forEach((btn) => {
-                btn.addEventListener("click", () => {
-                    document
-                        .querySelectorAll(".fmt-btn")
-                        .forEach((b) => b.classList.remove("active"));
-                    btn.classList.add("active");
-                    currentFormat = btn.dataset.fmt;
-                    if (payload) renderPreview();
-                });
-            });
-        </script>
-    </body>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Token Exporter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0e0e10;
+    --surface:   #18181c;
+    --border:    #2a2a32;
+    --muted:     #3e3e50;
+    --text-dim:  #6b6b80;
+    --text:      #c8c8d8;
+    --text-hi:   #f0f0f8;
+    --accent:    #7c6cfa;
+    --accent-lo: #7c6cfa22;
+    --green:     #4ade80;
+    --red:       #f87171;
+    --amber:     #fbbf24;
+    --radius:    6px;
+    --mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .logo-mark {
+    width: 24px; height: 24px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg { display: block; }
+
+  .logo-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-hi);
+    letter-spacing: -0.01em;
+  }
+
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* ── Stats grid ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 12px 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-hi);
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .stat-value.has-data { color: var(--accent); }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* ── Format selector ── */
+  .controls {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .controls-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .format-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2px;
+    flex: 1;
+  }
+
+  .fmt-btn {
+    flex: 1;
+    padding: 5px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    letter-spacing: 0.02em;
+  }
+
+  .fmt-btn:hover { color: var(--text); }
+  .fmt-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* ── Preview ── */
+  .preview-wrap {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .preview-header {
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .preview-title {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .preview-title .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+
+  .preview-title .dot.live { background: var(--green); }
+
+  .line-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  pre {
+    flex: 1;
+    overflow: auto;
+    padding: 16px 20px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text);
+    background: transparent;
+    white-space: pre;
+  }
+
+  pre::-webkit-scrollbar { width: 4px; height: 4px; }
+  pre::-webkit-scrollbar-track { background: transparent; }
+  pre::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+  /* JSON syntax highlighting */
+  .json-key     { color: #9d86f5; }
+  .json-string  { color: #7dd3a8; }
+  .json-number  { color: #fbbf24; }
+  .json-bool    { color: #f472b6; }
+  .json-null    { color: var(--text-dim); }
+
+  /* ── Footer ── */
+  footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+
+  .btn-ghost {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .btn-ghost:hover:not(:disabled) { border-color: var(--muted); }
+
+  /* ── Status bar ── */
+  .status-bar {
+    padding: 6px 20px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    flex-shrink: 0;
+  }
+
+  .status-bar .status-icon { font-size: 10px; }
+  .status-bar.error   { color: var(--red); }
+  .status-bar.success { color: var(--green); }
+  .status-bar.loading { color: var(--amber); }
+
+  /* ── Empty state ── */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-dim);
+    padding: 32px;
+    text-align: center;
+  }
+
+  .empty-icon {
+    font-size: 32px;
+    opacity: 0.4;
+    line-height: 1;
+  }
+
+  .empty-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .empty-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    max-width: 240px;
+  }
+
+  /* ── Warning banner ── */
+  .warning-banner {
+    display: none;
+    padding: 12px 20px;
+    background: #2a1f00;
+    border-bottom: 1px solid #7c5800;
+    gap: 12px;
+    align-items: flex-start;
+    flex-shrink: 0;
+  }
+
+  .warning-banner.visible { display: flex; }
+
+  .warning-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    line-height: 1.5;
+  }
+
+  .warning-body { flex: 1; }
+
+  .warning-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--amber);
+    margin-bottom: 3px;
+  }
+
+  .warning-text {
+    font-size: 11px;
+    color: #c8a840;
+    line-height: 1.5;
+  }
+
+  .warning-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .btn-warn {
+    padding: 5px 12px;
+    border: 1px solid #7c5800;
+    border-radius: var(--radius);
+    background: #3d2e00;
+    color: var(--amber);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: background 0.15s;
+  }
+
+  .btn-warn:hover { background: #4d3a00; }
+  .btn-warn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-warn-ghost {
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: transparent;
+    color: #7a6030;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+
+  .btn-warn-ghost:hover { color: #c8a840; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .spinner {
+    width: 12px; height: 12px;
+    border: 1.5px solid var(--amber);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  /* ── Copy flash ── */
+  @keyframes flash {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
+  .flash { animation: flash 0.3s ease; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+        <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+        <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+        <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.3"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-text">Token Exporter</div>
+      <div class="logo-sub">Figma Plugin</div>
+    </div>
+  </div>
+</header>
+
+<div class="stats" id="statsGrid">
+  <div class="stat">
+    <span class="stat-value" id="cnt-text">—</span>
+    <span class="stat-label">Text</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="cnt-paint">—</span>
+    <span class="stat-label">Colors</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="cnt-effect">—</span>
+    <span class="stat-label">Effects</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="cnt-collections">—</span>
+    <span class="stat-label">Collections</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="cnt-vars">—</span>
+    <span class="stat-label">Variables</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="cnt-lib-vars">—</span>
+    <span class="stat-label">Lib Vars</span>
+  </div>
+</div>
+
+<div class="warning-banner" id="libWarning">
+  <div class="warning-icon">⚠</div>
+  <div class="warning-body">
+    <div class="warning-title">Library variable values not resolved</div>
+    <div class="warning-text">
+      <span id="libWarningCount">N</span> library variables were found but their values require
+      importing references into this document. Variables already present are reused as-is.
+      New remote references are managed by Figma and garbage-collected automatically when unused.
+      Safe to run multiple times.
+    </div>
+    <div class="warning-actions">
+      <button class="btn-warn" id="resolveBtn">Resolve values</button>
+      <button class="btn-warn-ghost" id="dismissWarningBtn">Skip</button>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <span class="controls-label">Format</span>
+  <div class="format-tabs">
+    <button class="fmt-btn active" data-fmt="json">JSON</button>
+    <button class="fmt-btn" data-fmt="css">CSS Vars</button>
+    <button class="fmt-btn" data-fmt="text">Text only</button>
+    <button class="fmt-btn" data-fmt="paint">Colors only</button>
+    <button class="fmt-btn" data-fmt="vars">Variables</button>
+    <button class="fmt-btn" data-fmt="tw4-css">Tailwind v4</button>
+  </div>
+</div>
+
+<div class="preview-wrap" id="previewWrap">
+  <div class="preview-header">
+    <span class="preview-title">
+      <span class="dot" id="liveDot"></span>
+      Preview
+    </span>
+    <span class="line-count" id="lineCount"></span>
+  </div>
+
+  <div class="empty-state" id="emptyState">
+    <div class="empty-icon">◈</div>
+    <div class="empty-title">No tokens yet</div>
+    <div class="empty-sub">Click Export to extract all styles and variables from this file.</div>
+  </div>
+
+  <pre id="previewPre" style="display:none;"></pre>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <span class="status-icon">○</span>
+  <span id="statusMsg">Ready</span>
+</div>
+
+<footer>
+  <button class="btn btn-ghost" id="copyBtn" disabled>Copy</button>
+  <button class="btn btn-primary" id="exportBtn">
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path d="M6.5 1v7M3.5 5.5l3 3 3-3M2 10h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Export &amp; Download
+  </button>
+</footer>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let payload = null;
+  let currentFormat = 'json';
+  let exportWatchdog = null;
+
+  const exportBtn       = document.getElementById('exportBtn');
+  const copyBtn         = document.getElementById('copyBtn');
+  const previewPre      = document.getElementById('previewPre');
+  const emptyState      = document.getElementById('emptyState');
+  const statusBar       = document.getElementById('statusBar');
+  const statusMsg       = document.getElementById('statusMsg');
+  const liveDot         = document.getElementById('liveDot');
+  const lineCount       = document.getElementById('lineCount');
+  const libWarning      = document.getElementById('libWarning');
+  const libWarningCount = document.getElementById('libWarningCount');
+  const resolveBtn      = document.getElementById('resolveBtn');
+  const dismissWarning  = document.getElementById('dismissWarningBtn');
+
+  // ── Format converters ──────────────────────────────────────────────────────
+
+  function toJSON(data) {
+    return JSON.stringify(data, null, 2);
+  }
+
+  function toCSS(data) {
+    const lines = [':root {'];
+
+    // Paint styles → CSS custom properties
+    if (data.paintStyles?.length) {
+      lines.push('  /* ── Colors ── */');
+      for (const style of data.paintStyles) {
+        const cssName = '--color-' + style.name.toLowerCase().replace(/\//g,'-').replace(/\s+/g,'-').replace(/[^\x00-\x7F]/g,'').replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+        const solid = style.paints.find(p => p.type === 'SOLID');
+        if (solid?.hex) lines.push(`  ${cssName}: ${solid.hex};`);
+      }
+    }
+
+    // Text styles → CSS custom properties
+    if (data.textStyles?.length) {
+      lines.push('');
+      lines.push('  /* ── Typography ── */');
+      for (const style of data.textStyles) {
+        const base = '--type-' + style.name.toLowerCase().replace(/\//g,'-').replace(/\s+/g,'-').replace(/[^\x00-\x7F]/g,'').replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+        lines.push(`  ${base}-size: ${style.fontSize}px;`);
+        if (style.fontFamily) lines.push(`  ${base}-family: "${style.fontFamily}";`);
+        if (style.lineHeight?.unit !== 'AUTO') {
+          const lhUnit = style.lineHeight?.unit === 'PERCENT' ? 'em' : 'px';
+          const lhVal  = style.lineHeight?.unit === 'PERCENT'
+            ? (style.lineHeight.value / 100).toFixed(3)
+            : style.lineHeight?.value;
+          lines.push(`  ${base}-line-height: ${lhVal}${lhUnit};`);
+        } else {
+          lines.push(`  ${base}-line-height: normal;`);
+        }
+        if (style.letterSpacing?.value) {
+          const lsUnit = style.letterSpacing.unit === 'PERCENT' ? 'em' : 'px';
+          const lsVal  = style.letterSpacing.unit === 'PERCENT'
+            ? (style.letterSpacing.value / 100).toFixed(4)
+            : style.letterSpacing.value;
+          lines.push(`  ${base}-letter-spacing: ${lsVal}${lsUnit};`);
+        }
+      }
+    }
+
+    // Variables → CSS custom properties
+    for (const collection of (data.variables || [])) {
+      const modes = collection.modes;
+      if (modes.length === 1) {
+        // Single mode — flat :root vars
+        lines.push('');
+        lines.push(`  /* ── ${collection.name} ── */`);
+        for (const v of collection.variables) {
+          const cssName = '--' + v.name.toLowerCase().replace(/\//g,'-').replace(/\s+/g,'-').replace(/[^\x00-\x7F]/g,'').replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+          const val = Object.values(v.valuesByMode)[0];
+          if (val !== null && val !== undefined && typeof val !== 'object') lines.push(`  ${cssName}: ${val};`);
+        }
+      } else {
+        // Multi-mode — emit per-mode attribute selectors
+        for (let modeIdx = 0; modeIdx < modes.length; modeIdx++) {
+          const mode = modes[modeIdx];
+          const themeSlug = mode.name.toLowerCase().replace(/\//g, '-').replace(/\s+/g, '-').replace(/[^\x00-\x7F]/g, '').replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+          const selector = modeIdx === 0 ? ':root' : `[data-theme="${themeSlug}"]`;
+          lines.push('');
+          lines.push(`${selector} {  /* ${collection.name} / ${mode.name} */`);
+          for (const v of collection.variables) {
+            const val = v.valuesByMode[mode.name];
+            if (val === undefined) continue;
+            const cssName = '--' + v.name.toLowerCase().replace(/\//g,'-').replace(/\s+/g,'-').replace(/[^\x00-\x7F]/g,'').replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+            if (val && typeof val === 'object' && val.$alias) {
+              const aliasSlug = val.$alias.toLowerCase().replace(/\//g,'-').replace(/\s+/g,'-').replace(/[^\x00-\x7F]/g,'').replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+              const aliasName = '--' + aliasSlug;
+              lines.push(`  ${cssName}: var(${aliasName});`);
+            } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+              lines.push(`  ${cssName}: ${val};`);
+            }
+          }
+          lines.push('}');
+        }
+      }
+    }
+
+    lines.push('}');
+    return lines.join('\n');
+  }
+
+  function toTextOnly(data) {
+    if (!data.textStyles?.length) return '/* No text styles found */';
+    return data.textStyles.map(s => {
+      const lh = s.lineHeight?.unit === 'AUTO'
+        ? 'auto'
+        : `${s.lineHeight?.value}${s.lineHeight?.unit === 'PERCENT' ? '%' : 'px'}`;
+      // Figma PERCENT letter-spacing is relative to font-size (like em).
+      // CSS letter-spacing does not accept %, so convert: value/100 → em.
+      const ls = s.letterSpacing?.value
+        ? (s.letterSpacing.unit === 'PERCENT'
+            ? (s.letterSpacing.value / 100).toFixed(4) + 'em'
+            : s.letterSpacing.value + 'px')
+        : '0';
+
+      return [
+        `/* ${s.name} */`,
+        `font-family: "${s.fontFamily}", sans-serif;`,
+        `font-style: ${s.fontStyle && s.fontStyle.toLowerCase().includes('italic') ? 'italic' : 'normal'}; /* Figma: ${s.fontStyle || 'Regular'} */`,
+        `font-size: ${s.fontSize}px;`,
+        `line-height: ${lh};`,
+        `letter-spacing: ${ls};`,
+        `text-transform: ${s.textCase === 'UPPER' ? 'uppercase' : s.textCase === 'LOWER' ? 'lowercase' : s.textCase === 'TITLE' ? 'capitalize' : 'none'};`,
+        `text-decoration: ${s.textDecoration === 'NONE' ? 'none' : s.textDecoration?.toLowerCase() || 'none'};`,
+      ].join('\n');
+    }).join('\n\n');
+  }
+
+  function toPaintOnly(data) {
+    if (!data.paintStyles?.length) return '/* No paint styles found */';
+    return data.paintStyles.map(s => {
+      const solid = s.paints.find(p => p.type === 'SOLID');
+      const value = solid?.hex ?? (s.paints[0]?.type ?? 'unknown');
+      const varRef = solid?.boundVariable ? ` /* → ${solid.boundVariable.name} */` : '';
+      return `${s.name}: ${value};${varRef}`;
+    }).join('\n');
+  }
+
+  function toVarsOnly(data) {
+    const lines = [];
+
+    if (!data.variables?.length && !data.libraryVariables?.length) {
+      return '/* No variables found */';
+    }
+
+    // Local variables
+    for (const col of (data.variables || [])) {
+      lines.push(`/* ════ ${col.name} (local) ════ */`);
+      for (const v of col.variables) {
+        lines.push(`/* ${v.name} [${v.resolvedType}] */`);
+        for (const [mode, val] of Object.entries(v.valuesByMode)) {
+          const display = typeof val === 'object' && val?.$alias ? `→ ${val.$alias}` : String(val);
+          lines.push(`  ${mode}: ${display}`);
+        }
+      }
+      lines.push('');
+    }
+
+    // Library variables
+    for (const col of (data.libraryVariables || [])) {
+      const resolved = col.valuesResolved;
+      lines.push(`/* ════ ${col.name} (library: ${col.libraryName})${resolved ? '' : ' — values not resolved'} ════ */`);
+      for (const v of col.variables) {
+        if (resolved && v.valuesByMode) {
+          lines.push(`/* ${v.name} [${v.resolvedType}] */`);
+          for (const [modeId, val] of Object.entries(v.valuesByMode)) {
+            const display = typeof val === 'object' && val?.$alias ? `→ ${val.$alias}` : String(val);
+            lines.push(`  ${modeId}: ${display}`);
+          }
+        } else {
+          lines.push(`  ${v.name} [${v.resolvedType}]`);
+        }
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  // ── Tailwind v4 CSS format ─────────────────────────────────────────────────
+  // Produces 5 files matching the project's CSS architecture:
+  //   primitives.css  → @theme with raw hex values (primitive collections)
+  //   semantics.css   → @theme with semantic alias vars
+  //   themes.css      → :where([data-theme="..."]) > * blocks (multi-mode collections)
+  //   sizes.css       → @utility text-* size composites from text styles
+  //   texts.css       → @utility texts-* font/weight/leading composites from text styles
+
+  // "Primitives/Brand/Blue/SWK-blue-50" → "primitives-brand-blue-swk-blue-50"
+  function toCssVarName(path) {
+    return path
+      .toLowerCase()
+      .replace(/\//g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/[^\x00-\x7F]/g, '')
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  // Text style utility segment: last path segment, stripping a leading group
+  // prefix if it duplicates the group name.
+  // "Text/Text Body"    → "body"     (strips leading "Text " from segment)
+  // "Text/Eyebrow"      → "eyebrow"  (no match, kept as-is)
+  // "Headings/h1 Display" → "h1-display"
+  function lastSegment(name) {
+    var parts = name.split('/');
+    var group   = parts[0];
+    var segment = parts[parts.length - 1];
+    // Strip leading group word from segment if it matches (e.g. "Text Body" under "Text")
+    var pattern = new RegExp('^' + group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+', 'i');
+    var cleaned = segment.replace(pattern, '').trim();
+    return toCssVarName(cleaned || segment);
+  }
+
+  // Semantic var name: drop first path segment to match project convention.
+  // "Text/Text-dark" → "text-dark"  (not "text-text-dark")
+  // "Backgrounds/Section-bg-default" → "section-bg-default"
+  // "Icons/Fa-icon-dark" → "fa-icon-dark"
+  function semanticVarName(name) {
+    var parts = name.split('/');
+    var relevant = parts.length > 1 ? parts.slice(1) : parts;
+    return toCssVarName(relevant.join('/'));
+  }
+
+  function resolveAliasVarName(aliasName, aliasId, allVarsMap) {
+    // Try by ID first (reliable) — $aliasId is the Figma variable ID
+    if (aliasId) {
+      var byId = allVarsMap.get(aliasId);
+      if (byId) {
+        return byId._isPrimitive
+          ? '--color-primitives-' + toCssVarName(byId.name)
+          : '--color-' + semanticVarName(byId.name);
+      }
+    }
+    // Fallback: construct from name string
+    if (aliasName) {
+      var lc = aliasName.toLowerCase();
+      var isPrim = lc.startsWith('primitives/') || lc.startsWith('brand/');
+      return isPrim
+        ? '--color-primitives-' + toCssVarName(aliasName)
+        : '--color-' + semanticVarName(aliasName);
+    }
+    return null;
+  }
+
+  function toTw4Css(data) {
+    // Flatten all local variables into a Map keyed by id, tagging primitives.
+    // Using a Map gives O(1) lookup in resolveAliasVarName vs O(n) with .find().
+    var allVars = new Map();
+    (data.variables || []).forEach(function(col) {
+      var isPrim = /primitiv/i.test(col.name);
+      col.variables.forEach(function(v) {
+        allVars.set(v.id, Object.assign({}, v, { _isPrimitive: isPrim }));
+      });
+    });
+    // Library vars: values may not be resolved, but include for alias lookups
+    (data.libraryVariables || []).forEach(function(col) {
+      var isPrim = /primitiv/i.test(col.name);
+      col.variables.forEach(function(v) {
+        if (v.id) allVars.set(v.id, Object.assign({}, v, { _isPrimitive: isPrim }));
+      });
+    });
+
+    // ── Categorise collections ───────────────────────────────────────────────
+    var primitiveCollections = [];
+    var semanticCollections  = [];
+    var themeCollections     = [];
+
+    (data.variables || []).forEach(function(col) {
+      var hasColors = col.variables.some(function(v) { return v.resolvedType === 'COLOR'; });
+      // Primitives are identified by name — they always go to primitives.css
+      // regardless of mode count. Theme check is only for non-primitive collections.
+      if (/primitiv/i.test(col.name)) {
+        primitiveCollections.push(col);
+      } else if (col.modes.length > 1 && hasColors) {
+        themeCollections.push(col);
+      } else {
+        semanticCollections.push(col);
+      }
+    });
+
+    // ── primitives.css ───────────────────────────────────────────────────────
+    var primLines = ['@theme {'];
+    primitiveCollections.forEach(function(col) {
+      var colorVars = col.variables.filter(function(v) { return v.resolvedType === 'COLOR'; });
+      if (colorVars.length) primLines.push('  /* ' + col.name + ' */');
+      colorVars.slice().sort(function(a, b) { return a.name.localeCompare(b.name); }).forEach(function(v) {
+        var val = Object.values(v.valuesByMode)[0];
+        if (!val) return;
+        var cssName = '--color-primitives-' + toCssVarName(v.name);
+        if (typeof val === 'string') {
+          primLines.push('  ' + cssName + ': ' + val + ';');
+        }
+        // Raw primitives should not be aliases — skip if they are
+      });
+    });
+    primLines.push('}');
+
+    // ── semantics.css ────────────────────────────────────────────────────────
+    // Single-mode collections (semantic aliases).
+    // Var name drops the first path segment to match project convention:
+    // "Text/Text-dark" → --color-text-dark (not --color-text-text-dark)
+    // Helper: emit one semantic color variable line into an array
+    function emitSemanticVar(lines, v, modeValues) {
+      var cssName = '--color-' + semanticVarName(v.name);
+      var val = modeValues !== undefined ? modeValues : Object.values(v.valuesByMode)[0];
+      if (typeof val === 'string') {
+        lines.push('  ' + cssName + ': ' + val + ';');
+      } else if (val && val.$alias) {
+        var refName = resolveAliasVarName(val.$alias, val.$aliasId, allVars);
+        if (refName) {
+          lines.push('  ' + cssName + ': var(' + refName + ');');
+        } else {
+          lines.push('  /* ' + cssName + ': <unresolved> */');
+        }
+      } else {
+        lines.push('  /* ' + cssName + ': <unresolved> */');
+      }
+    }
+
+    var semLines = ['@theme {'];
+
+    // Single-mode semantic collections
+    semanticCollections.forEach(function(col) {
+      var colorVars = col.variables.filter(function(v) { return v.resolvedType === 'COLOR'; });
+      if (colorVars.length) semLines.push('  /* ' + col.name + ' */');
+      colorVars.forEach(function(v) { emitSemanticVar(semLines, v); });
+    });
+
+    // Multi-mode (theme) collections: also emit their Default mode into @theme
+    // so Tailwind generates utility classes (bg-text-dark, etc.) at build time.
+    // The runtime overrides live in themes.css.
+    themeCollections.forEach(function(col) {
+      var defaultMode = col.modes.find(function(m) { return m.name.toLowerCase() === 'default'; });
+      if (!defaultMode) return;
+      var colorVars = col.variables.filter(function(v) { return v.resolvedType === 'COLOR'; });
+      if (colorVars.length) semLines.push('  /* ' + col.name + ' (Default) */');
+      colorVars.forEach(function(v) {
+        // Use defaultMode.name (not hardcoded 'Default') so case variants like 'default' work
+        emitSemanticVar(semLines, v, v.valuesByMode[defaultMode.name]);
+      });
+    });
+
+    semLines.push('}');
+
+    // ── themes.css ───────────────────────────────────────────────────────────
+    // Multi-mode collections. Each mode → :where([data-theme="..."]) > * block.
+    // Var name uses same semanticVarName (drops first segment).
+    var themeLines = [];
+    themeCollections.forEach(function(col) {
+      col.modes.forEach(function(mode) {
+        var modeName = mode.name;
+        var themeSlug = toCssVarName(modeName);
+        var selector = ':where([data-theme="' + themeSlug + '"]) > *';
+        themeLines.push(selector + ' {');
+
+        col.variables.filter(function(v) { return v.resolvedType === 'COLOR'; }).forEach(function(v) {
+          var val = v.valuesByMode[modeName];
+          if (val === undefined) return;
+          var cssName = '--color-' + semanticVarName(v.name);
+
+          if (typeof val === 'string') {
+            themeLines.push('  ' + cssName + ': ' + val + ';');
+          } else if (val && val.$alias) {
+            var refName = resolveAliasVarName(val.$alias, val.$aliasId, allVars);
+            if (refName) {
+              themeLines.push('  ' + cssName + ': var(' + refName + ');');
+            } else {
+              themeLines.push('  /* ' + cssName + ': <unresolved> */');
+            }
+          } else {
+            themeLines.push('  /* ' + cssName + ': <unresolved> */');
+          }
+        });
+
+        themeLines.push('}');
+        themeLines.push('');
+      });
+    });
+
+    // ── sizes.css — @utility text-* from text styles ─────────────────────────
+    // Utility name: last path segment — "Headings/H1 Display" → text-h1-display
+    //
+    // Responsive strategy:
+    //   If the text style's fontSize is bound to a variable that has multiple
+    //   modes (e.g. Desktop / Tablet / Mobile), we map those mode names to
+    //   Tailwind breakpoint prefixes and generate a responsive @apply chain.
+    //   Mode name → breakpoint prefix mapping (mobile-first, case-insensitive):
+    //     Mobile / SM / Small / XS → (no prefix, base)
+    //     Tablet / MD / Medium → md:
+    //     Desktop / LG / Large / Default → lg:
+    //   If no multi-mode binding exists, fall back to the raw fontSize scalar.
+
+    // Tailwind built-in text-* utilities that must not be shadowed by @utility.
+    // Emitting "@utility text-base { @apply text-base; }" causes infinite recursion.
+    var TW_BUILTIN_TEXT = {
+      'text-xs':true,'text-sm':true,'text-base':true,'text-lg':true,'text-xl':true,
+      'text-2xl':true,'text-3xl':true,'text-4xl':true,'text-5xl':true,'text-6xl':true,
+      'text-7xl':true,'text-8xl':true,'text-9xl':true
+    };
+
+    var sizeLines = [];
+
+    // Build a lookup: variable id → variable object (with valuesByMode)
+    var varById = {};
+    (data.variables || []).forEach(function(col) {
+      col.variables.forEach(function(v) { varById[v.id] = v; });
+    });
+
+    function pxToTwSize(px) {
+      if (px <= 10)  return 'text-[10px]';
+      if (px <= 12)  return 'text-xs';
+      if (px <= 14)  return 'text-sm';
+      if (px <= 16)  return 'text-base';
+      if (px <= 18)  return 'text-lg';
+      if (px <= 20)  return 'text-xl';
+      if (px <= 24)  return 'text-2xl';
+      if (px <= 30)  return 'text-3xl';
+      if (px <= 36)  return 'text-4xl';
+      if (px <= 48)  return 'text-5xl';
+      if (px <= 60)  return 'text-6xl';
+      return 'text-[' + px + 'px]';
+    }
+
+    // Map Figma mode name → Tailwind breakpoint prefix (mobile-first)
+    function modeToBreakpoint(modeName) {
+      var m = modeName.toLowerCase().trim();
+      if (/mobile|sm\b|small|xs\b/.test(m))    return '';
+      if (/tablet|md\b|medium/.test(m))          return 'md:';
+      if (/desktop|lg\b|large|default/.test(m))  return 'lg:';
+      return null;
+    }
+
+    // Resolve a FLOAT variable mode value to a Tailwind text-* class.
+    // Three cases in priority order:
+    //   1. Alias name like "size/text-6xl" or "Text size/6xl" → extract last segment
+    //   2. Numeric px value → map via pxToTwSize
+    //   3. Alias that resolves to another local var with a numeric value
+    // Known Tailwind text-* size classes that are valid @apply targets
+    var TW_TEXT_SIZES = ['text-xs','text-sm','text-base','text-lg','text-xl',
+      'text-2xl','text-3xl','text-4xl','text-5xl','text-6xl','text-7xl','text-8xl','text-9xl'];
+
+    function resolveFloatToTwClass(raw, _depth) {
+      if (!raw) return null;
+      // Guard against circular alias chains (invalid but possible with stale library data)
+      if ((_depth || 0) > 5) return null;
+
+      // Alias with a resolved name (after code.js fix)
+      if (raw && raw.$alias && typeof raw.$alias === 'string') {
+        var aliasName = raw.$alias;
+        // Only use name-based resolution if it looks like a name, not a raw ID
+        if (!aliasName.startsWith('VariableID:')) {
+          var seg = aliasName.split('/').pop().toLowerCase().trim();
+          // Normalise: remove anything that isn't alphanumeric, dash or space
+          seg = seg.replace(/[^a-z0-9\s-]/g, '').trim();
+          seg = seg.replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+          if (!seg) return null;
+          if (!seg.startsWith('text-')) seg = 'text-' + seg;
+          // Validate it is a recognised Tailwind size — if not, bail so we
+          // fall back to the scalar fontSize via pxToTwSize
+          if (TW_TEXT_SIZES.indexOf(seg) === -1) return null;
+          return seg;
+        }
+        // Unresolved ID alias — try local varById (with depth guard)
+        if (raw.$aliasId && varById[raw.$aliasId]) {
+          return resolveFloatToTwClass(Object.values(varById[raw.$aliasId].valuesByMode || {})[0], (_depth || 0) + 1);
+        }
+        return null;
+      }
+
+      // Numeric px
+      if (typeof raw === 'number') return pxToTwSize(raw);
+
+      return null;
+    }
+
+    (data.textStyles || []).forEach(function(style) {
+      var utilName = 'text-' + lastSegment(style.name);
+      // Early exit: skip utilities that would shadow a Tailwind built-in
+      if (TW_BUILTIN_TEXT[utilName]) return;
+
+      var boundFontSize = style.boundVariables && style.boundVariables.fontSize;
+      // boundFontSize.id = local variable ID (from resolveVariableAlias)
+      // boundFontSize.$aliasId = library variable ID (from resolveValue in code.js)
+      var boundVarId = boundFontSize && (boundFontSize.id || boundFontSize['$aliasId']);
+      var boundVar   = boundVarId ? varById[boundVarId] : null;
+
+      var applies = [];
+
+      if (boundVar && Object.keys(boundVar.valuesByMode || {}).length > 1) {
+        var order = { '': 0, 'md:': 1, 'lg:': 2 };
+        var breakpointSizes = [];
+
+        Object.keys(boundVar.valuesByMode).forEach(function(modeName) {
+          var bp = modeToBreakpoint(modeName);
+          if (bp === null) return;
+          var cls = resolveFloatToTwClass(boundVar.valuesByMode[modeName]);
+          if (cls) breakpointSizes.push({ bp: bp, cls: cls });
+        });
+
+        breakpointSizes.sort(function(a, b) {
+          return (order[a.bp] || 0) - (order[b.bp] || 0);
+        });
+
+        // Deduplicate adjacent identical classes
+        var lastCls = null;
+        breakpointSizes.forEach(function(entry) {
+          if (entry.cls !== lastCls) {
+            applies.push(entry.bp + entry.cls);
+            lastCls = entry.cls;
+          }
+        });
+      }
+
+      if (!applies.length && style.fontSize) {
+        applies.push(pxToTwSize(style.fontSize));
+      }
+
+      if (!applies.length) return;
+
+      sizeLines.push('@utility ' + utilName + ' {');
+      sizeLines.push('    @apply ' + applies.join(' ') + ';');
+      sizeLines.push('}');
+    });
+
+    // ── texts.css — @utility {segment}-text font composites ─────────────────
+    // Utility name: "{segment}-text" (suffix convention, matching project pattern).
+    // @apply references the text-* utility from sizes.css (same segment name),
+    // plus font-family, font-weight, and line-height.
+    var textLines = [];
+
+    function weightToTw(style) {
+      var s = (style.fontStyle || '').toLowerCase();
+      if (s.includes('thin'))                              return 'font-thin';
+      if (s.includes('extralight') || s.includes('extra-light')) return 'font-extralight';
+      if (s.includes('light'))                             return 'font-light';
+      if (s.includes('semibold') || s.includes('semi-bold')) return 'font-semibold';
+      if (s.includes('extrabold') || s.includes('extra-bold')) return 'font-extrabold';
+      if (s.includes('bold'))                              return 'font-bold';
+      if (s.includes('black') || s.includes('heavy'))     return 'font-black';
+      if (s.includes('medium'))                            return 'font-medium';
+      return 'font-normal';
+    }
+
+    function lineHeightToTw(lh) {
+      if (!lh || lh.unit === 'AUTO') return null;
+      if (lh.unit === 'PERCENT') {
+        // Convert percentage to a unitless ratio (130% → 1.3).
+        // Use Math.round to handle Figma floating-point imprecision (129.9999... → 130).
+        // Map to Tailwind v4 built-ins where exact; otherwise use arbitrary [ratio] syntax.
+        // Tailwind v4 built-in leading-* values:
+        //   leading-none (1), leading-tight (1.25), leading-snug (1.375),
+        //   leading-normal (1.5), leading-relaxed (1.625), leading-loose (2)
+        var pct = Math.round(lh.value);
+        if (pct === 100)  return 'leading-none';
+        if (pct === 125)  return 'leading-snug';
+        if (pct === 138)  return 'leading-snug';   // closest to 1.375
+        if (pct === 150)  return 'leading-normal';
+        if (pct === 163)  return 'leading-relaxed'; // closest to 1.625
+        if (pct === 200)  return 'leading-loose';
+        // All other values: arbitrary ratio
+        var ratio = parseFloat((pct / 100).toFixed(4));
+        return 'leading-[' + ratio + ']';
+      }
+      // PIXELS unit — use arbitrary px value
+      return 'leading-[' + lh.value + 'px]';
+    }
+
+    function familyToTw(family) {
+      if (!family) return null;
+      if (/inter/i.test(family))           return 'font-inter';
+      if (/greycliff|greyc/i.test(family)) return 'font-greycliff-cf';
+      return null;
+    }
+
+    // Figma PERCENT letter-spacing is font-size-relative (like em).
+    // CSS letter-spacing does not accept %, so: value / 100 → em.
+    // Returns a Tailwind tracking-* class or null if value is 0 or missing.
+    function letterSpacingToTw(ls) {
+      if (!ls || ls.value === 0) return null;
+      var em;
+      if (ls.unit === 'PERCENT') {
+        em = ls.value / 100;
+      } else {
+        // PIXELS — Tailwind arbitrary value, keep as px
+        return 'tracking-[' + ls.value + 'px]';
+      }
+      // Match against Tailwind built-in tracking-* values (em)
+      if (em === -0.05)  return 'tracking-tighter';
+      if (em === -0.025) return 'tracking-tight';
+      if (em === 0)      return null; // tracking-normal = default, no utility needed
+      if (em === 0.025)  return 'tracking-wide';
+      if (em === 0.05)   return 'tracking-wider';
+      if (em === 0.1)    return 'tracking-widest';
+      // Arbitrary value — round to 4 decimal places to avoid floating-point noise
+      return 'tracking-[' + parseFloat(em.toFixed(4)) + 'em]';
+    }
+
+    // Figma textCase → Tailwind text-transform utility
+    function textCaseToTw(textCase) {
+      if (textCase === 'UPPER')  return 'uppercase';
+      if (textCase === 'LOWER')  return 'lowercase';
+      if (textCase === 'TITLE')  return 'capitalize';
+      return null; // ORIGINAL = default, no utility needed
+    }
+
+    (data.textStyles || []).forEach(function(style) {
+      var seg     = lastSegment(style.name);
+      var utilName = seg + '-text';
+      // Reference the size utility from sizes.css by the same last-segment name
+      var sizeUtil = 'text-' + seg;
+
+      // Skip if the corresponding size utility was not generated (no fontSize data)
+      // and the sizeUtil would also not exist as a Tailwind built-in —
+      // an @apply of a non-existent utility causes a build error.
+      var sizeUtilExists = TW_BUILTIN_TEXT[sizeUtil] || style.fontSize;
+      if (!sizeUtilExists) return;
+
+      var applies = [];
+      var fam = familyToTw(style.fontFamily);
+      if (fam) applies.push(fam);
+      applies.push(weightToTw(style));
+      var lh = lineHeightToTw(style.lineHeight);
+      if (lh) applies.push(lh);
+      var ls = letterSpacingToTw(style.letterSpacing);
+      if (ls) applies.push(ls);
+      var tc = textCaseToTw(style.textCase);
+      if (tc) applies.push(tc);
+      // Use the generated size utility rather than raw px, so both files stay in sync
+      applies.push(sizeUtil);
+
+      textLines.push('@utility ' + utilName + ' {');
+      textLines.push('    @apply ' + applies.join(' ') + ';');
+      textLines.push('}');
+    });
+
+    return {
+      'primitives.css': primLines.join('\n'),
+      'semantics.css':  semLines.join('\n'),
+      'themes.css':     themeLines.join('\n'),
+      'sizes.css':      sizeLines.join('\n'),
+      'texts.css':      textLines.join('\n'),
+    };
+  }
+
+  // ── Multi-file ZIP download ─────────────────────────────────────────────────
+  function downloadTw4CssZip(files) {
+    // Use JSZip (loaded from CDN)
+    if (typeof JSZip === 'undefined') {
+      setStatus('error', 'JSZip not loaded — check network connection');
+      return;
+    }
+    const zip = new JSZip();
+    Object.keys(files).forEach(function(name) {
+      zip.file(name, files[name]);
+    });
+    zip.generateAsync({ type: 'blob' }).then(function(blob) {
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = 'tailwind-v4.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    }).catch(function(err) {
+      setStatus('error', 'ZIP generation failed: ' + (err && err.message ? err.message : String(err)));
+    });
+  }
+
+
+  function highlightJSON(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+      .replace(/: "([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+      .replace(/: (-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+      .replace(/: (true|false)/g, ': <span class="json-bool">$1</span>')
+      .replace(/: null/g, ': <span class="json-null">null</span>');
+  }
+
+  // ── Render preview ─────────────────────────────────────────────────────────
+  function renderPreview() {
+    if (!payload) return;
+
+    let content;
+    let multiFile = null;
+
+    switch (currentFormat) {
+      case 'json':  content = toJSON(payload);      break;
+      case 'css':   content = toCSS(payload);       break;
+      case 'text':  content = toTextOnly(payload);  break;
+      case 'paint': content = toPaintOnly(payload); break;
+      case 'vars':  content = toVarsOnly(payload);  break;
+      case 'tw4-css':
+        multiFile = toTw4Css(payload);
+        // Preview: concatenate all files with file headers
+        content = Object.keys(multiFile).map(function(name) {
+          return '/* ══════ ' + name + ' ══════ */\n' + multiFile[name];
+        }).join('\n\n');
+        break;
+      default: content = toJSON(payload);
+    }
+
+    const lines = content.split('\n').length;
+    lineCount.textContent = `${lines} lines`;
+
+    previewPre.innerHTML = currentFormat === 'json' ? highlightJSON(content) : escapeHTML(content);
+    previewPre.style.display = 'block';
+    emptyState.style.display = 'none';
+    liveDot.classList.add('live');
+    copyBtn.disabled = false;
+
+    previewPre._raw      = content;
+    previewPre._multiFile = multiFile; // store for zip download
+  }
+
+  function escapeHTML(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ── Status ─────────────────────────────────────────────────────────────────
+  function setStatus(type, msg) {
+    statusBar.className = 'status-bar ' + type;
+    const icons = { loading: '', error: '✕', success: '✓', '': '○' };
+    const iconEl = statusBar.querySelector('.status-icon');
+
+    if (type === 'loading') {
+      iconEl.innerHTML = '<div class="spinner"></div>';
+    } else {
+      iconEl.innerHTML = icons[type] || '○';
+    }
+    statusMsg.textContent = msg;
+  }
+
+  // ── Update stat counters ───────────────────────────────────────────────────
+  function updateStats(counts) {
+    const map = {
+      'cnt-text':        counts.textStyles,
+      'cnt-paint':       counts.paintStyles,
+      'cnt-effect':      counts.effectStyles,
+      'cnt-collections': counts.variableCollections,
+      'cnt-vars':        counts.variables,
+      'cnt-lib-vars':    counts.libraryVariables,
+    };
+    for (const [id, val] of Object.entries(map)) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.textContent = val ?? '—';
+      el.classList.toggle('has-data', (val ?? 0) > 0);
+    }
+  }
+
+  // ── Message from plugin ────────────────────────────────────────────────────
+  window.onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+    // Only process messages that carry a pluginMessage payload (Figma plugin protocol).
+    if (!msg) return;
+
+    if (msg.type === 'STATUS') {
+      clearTimeout(exportWatchdog); // plugin is alive — reset watchdog
+      exportWatchdog = null;
+      setStatus('loading', msg.message);
+
+    } else if (msg.type === 'RESULT') {
+      clearTimeout(exportWatchdog);
+      exportWatchdog = null;
+      payload = msg.payload;
+      updateStats(payload.meta.counts);
+      renderPreview();
+      exportBtn.disabled = false;
+
+      const total = payload.meta.counts.textStyles
+        + payload.meta.counts.paintStyles
+        + payload.meta.counts.effectStyles
+        + payload.meta.counts.variables
+        + (payload.meta.counts.libraryVariables ?? 0);
+
+      setStatus('success', `Exported ${total} tokens · ${new Date().toLocaleTimeString()}`);
+      triggerDownload();
+
+      const libVarCount = payload.meta.counts.libraryVariables ?? 0;
+      if (libVarCount > 0) {
+        libWarningCount.textContent = libVarCount;
+        libWarning.classList.add('visible');
+      }
+
+    } else if (msg.type === 'LIB_VARS_RESOLVED') {
+      clearTimeout(exportWatchdog);
+      exportWatchdog = null;
+      payload.libraryVariables = msg.libraryVariables;
+
+      const totalLibVars = msg.libraryVariables.reduce(function(acc, c) {
+        return acc + c.variables.length;
+      }, 0);
+      payload.meta.counts.libraryVariables = totalLibVars;
+
+      let newlyImported = 0;
+      msg.libraryVariables.forEach(function(c) {
+        if (c.importStats) newlyImported += c.importStats.newlyImported || 0;
+      });
+
+      libWarning.classList.remove('visible');
+      resolveBtn.disabled = false;
+      resolveBtn.textContent = 'Resolve values';
+
+      renderPreview();
+      triggerDownload();
+
+      const importMsg = newlyImported > 0
+        ? newlyImported + ' new reference(s) added to document (remote, Figma-managed)'
+        : 'all variables were already present in document';
+      setStatus('success', 'Library values resolved \u00b7 ' + importMsg);
+
+    } else if (msg.type === 'ERROR') {
+      clearTimeout(exportWatchdog);
+      exportWatchdog = null;
+      setStatus('error', msg.message);
+      exportBtn.disabled = false;
+      resolveBtn.disabled = false;
+      resolveBtn.textContent = 'Resolve values';
+    }
+  };
+
+
+  // ── Download ───────────────────────────────────────────────────────────────
+  function triggerDownload() {
+    if (currentFormat === 'tw4-css') {
+      // Always regenerate from current payload rather than relying on the cached
+      // DOM property which may be stale if the tab was switched after last render.
+      if (!payload) return;
+      const files = toTw4Css(payload);
+      downloadTw4CssZip(files);
+      return;
+    }
+    const ext = { json: 'json', css: 'css', text: 'css', paint: 'txt', vars: 'txt' }[currentFormat] || 'json';
+    const filename = `figma-tokens.${ext}`;
+    const content  = previewPre._raw || '';
+    const mime     = ext === 'json' ? 'application/json' : 'text/plain';
+
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Events ─────────────────────────────────────────────────────────────────
+  exportBtn.addEventListener('click', () => {
+    if (payload) {
+      // Already have data — just re-download
+      renderPreview();
+      triggerDownload();
+      return;
+    }
+    exportBtn.disabled = true;
+    setStatus('loading', 'Starting export…');
+
+    // Watchdog: if no STATUS or RESULT arrives within 15 s, surface an error
+    // so the user isn't left staring at a frozen spinner.
+    clearTimeout(exportWatchdog);
+    exportWatchdog = setTimeout(() => {
+      if (!payload) {
+        exportBtn.disabled = false;
+        setStatus('error', 'Export timed out — no response from plugin. Try re-opening the plugin.');
+      }
+    }, 15000);
+
+    parent.postMessage({ pluginMessage: { type: 'EXPORT' } }, '*');
+  });
+
+  copyBtn.addEventListener('click', () => {
+    const content = previewPre._raw || previewPre.textContent || '';
+    navigator.clipboard.writeText(content).then(() => {
+      copyBtn.textContent = 'Copied!';
+      previewPre.classList.add('flash');
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+        previewPre.classList.remove('flash');
+      }, 1500);
+    }).catch(() => {
+      // Clipboard API unavailable in this Figma sandbox context —
+      // fall back to a visible hint so the user knows to copy manually.
+      copyBtn.textContent = 'Select & copy manually';
+      setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2500);
+    });
+  });
+
+  resolveBtn.addEventListener('click', () => {
+    if (!payload || !payload.libraryVariables || !payload.libraryVariables.length) return;
+    resolveBtn.disabled = true;
+    resolveBtn.textContent = 'Resolving…';
+    setStatus('loading', 'Importing library variable references…');
+
+    // Watchdog for the resolve flow — importVariableByKeyAsync can also stall
+    clearTimeout(exportWatchdog);
+    exportWatchdog = setTimeout(() => {
+      resolveBtn.disabled = false;
+      resolveBtn.textContent = 'Resolve values';
+      setStatus('error', 'Resolve timed out — try re-opening the plugin.');
+    }, 60000); // 60s — resolving many lib vars is legitimately slow
+
+    parent.postMessage({
+      pluginMessage: {
+        type: 'RESOLVE_LIB_VARS',
+        libraryVariables: payload.libraryVariables,
+      }
+    }, '*');
+  });
+
+  dismissWarning.addEventListener('click', () => {
+    libWarning.classList.remove('visible');
+  });
+
+  document.querySelectorAll('.fmt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.fmt-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFormat = btn.dataset.fmt;
+      if (payload) renderPreview();
+    });
+  });
+</script>
+</body>
 </html>
